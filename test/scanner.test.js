@@ -409,6 +409,47 @@ test('Codex: 작업 폴더 밖 저장소의 파일을 파이썬으로 고친 명
   assert.deepStrictEqual(S.pathDirsIn(`cat ${note} https://example.invalid/a/b /`), [repo], '있는 경로의 폴더만, 주소와 뿌리는 뺀다');
 });
 
+test('Codex: 보는 기간보다 오래된 대화도 Claude처럼 목록용으로 찾는다(이 폴더는 목록 기간, 다른 폴더는 짧게), 검토 스레드는 따로 나오지 않는다', () => {
+  // 11-16 사용자: 보는 기간을 30분으로 두니 1시간 전에 끝난 Codex 대화가 목록에도 보관함에도 없었다
+  const H = 3600e3;
+  const mk = (id, cwd, at, text, extra) => {
+    const f = fx.codexSession(home, id, [
+      { timestamp: fx.iso(at), type: 'session_meta', payload: { id, session_id: id, cwd, originator: 'codex_vscode', source: 'vscode', ...(extra || {}) } },
+      { timestamp: fx.iso(at), type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } },
+      { timestamp: fx.iso(at + 1000), type: 'event_msg', payload: { type: 'task_complete' } },
+    ], at);
+    fs.utimesSync(f, new Date(at + 1000), new Date(at + 1000));
+    return f;
+  };
+  const RECENT = 'c0de0000-5555-4555-8555-0000000000e1';
+  const OLD = 'c0de0000-5555-4555-8555-0000000000e2';
+  const ELSEWHERE = 'c0de0000-5555-4555-8555-0000000000e3';
+  const REVIEW = 'c0de0000-5555-4555-8555-0000000000e4';
+  const otherDir = path.join(home, 'work', 'elsewhere');
+  fs.mkdirSync(otherDir, { recursive: true });
+  mk(RECENT, project, now - 2 * H, 'Finished two hours ago');
+  mk(OLD, project, now - 72 * H, 'Finished three days ago');
+  mk(ELSEWHERE, otherDir, now - 72 * H, 'Other folder, three days ago');
+  // 검토 스레드: 뿌리(OLD) 아래에 묶인다. 대화를 줄여 담은 줄뿐이라 따로 읽지 않는다
+  const rv = fx.codexSession(home, REVIEW, [
+    { timestamp: fx.iso(now - 72 * H), type: 'session_meta', payload: { id: REVIEW, session_id: OLD, parent_thread_id: OLD, cwd: project, originator: 'codex_vscode', source: { subagent: { other: 'guardian' } } } },
+    { timestamp: fx.iso(now - 72 * H), type: 'response_item', payload: { type: 'compaction', summary: 'x'.repeat(5000) } },
+  ], now - 72 * H);
+  fs.utimesSync(rv, new Date(now - 72 * H), new Date(now - 72 * H));
+  const r = S.createModel().scan({ ...base(), lookbackHours: 0.5, workspaceDirs: [project], listDays: 90, otherListDays: 1 });
+  const recent = find(r, 'codex:' + RECENT);
+  assert.ok(recent, '2시간 전에 끝난 이 폴더 대화가 목록에 있다');
+  assert.deepStrictEqual([recent.metaOnly, recent.alive, recent.status, recent.title], [true, true, 'idle', 'Finished two hours ago']);
+  const old = find(r, 'codex:' + OLD);
+  assert.ok(old, '3일 전 이 폴더 대화도 목록용으로 있다(보관함으로 갈 수 있게)');
+  assert.deepStrictEqual([old.alive, old.status], [false, null]);
+  assert.ok(Math.abs(old.lastActivity - (now - 72 * H + 1000)) < 2000, '마지막 활동은 기록 시각');
+  assert.ok(!find(r, 'codex:' + ELSEWHERE), '다른 폴더 대화는 짧은 기간(1일)만');
+  assert.ok(!find(r, 'codex:' + REVIEW), '검토 스레드는 따로 나오지 않는다');
+  const wide = S.createModel().scan({ ...base(), lookbackHours: 0.5, workspaceDirs: [project], listDays: 90, otherListDays: 14 });
+  assert.ok(find(wide, 'codex:' + ELSEWHERE), '다른 폴더 기간을 늘리면 나온다');
+});
+
 test('Codex: 며칠 전에 시작해 지금도 쓰는 세션을 찾는다(기록은 시작한 날 폴더에 있다)', () => {
   const LONG = 'c0de0000-3333-4333-8333-00000000cccc';
   const f = path.join(project, 'cx-long.txt');

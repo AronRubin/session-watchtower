@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.31.2
+
+- **Codex chats no longer vanish after the time range.** Codex chats older than the time range (for example 30 minutes) were not looked for at all, so after a while, or after restarting VS Code, they were missing from the list and from *Archived*. They are now listed like Claude sessions: this folder's Codex chats up to `sessionListDays`, other folders' for a shorter time, and old ones go to *Archived* by the usual rule. Review sub-threads stay under their chat.
+- Reading them is light: only the start of each old Codex file (up to 64 KB for review threads) and its last record, and the result is cached, so later starts read nothing new.
+
 ## 0.31.1
 
 - **Finished Codex chats are idle, not off.** Codex has no process per conversation and any chat can be continued after VS Code restarts, so a Codex session whose last activity is within 6 hours now shows as idle (or "just finished" for the first 10 minutes) instead of off. Older ones show as off. It also counts in *Open*. A Codex session in the middle of a turn is still working.

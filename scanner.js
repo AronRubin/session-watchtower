@@ -416,6 +416,8 @@ const SEEK_MIN_BYTES = 8 * 1024 * 1024; // 이보다 작으면 그냥 다 읽는
 const SEEK_STOP_BYTES = 1024 * 1024;
 const SEEK_MARGIN_MS = 10 * 60 * 1000; // 경계에 걸친 명령을 위해 10분 앞에서부터
 const HEAD_BYTES = 1024 * 1024; // 첫 질문·작업 폴더는 파일 맨 앞에 있다
+const CODEX_HEAD_BYTES = 256 * 1024;
+const CODEX_META_BACK_BYTES = 16 * 1024 * 1024; // 목록용 요약에서 마지막 활동을 찾을 때 거꾸로 읽는 한도
 const PROBE_MAX_BYTES = 24 * 1024 * 1024;
 const PROBE_LINE_MAX = 2 * 1024 * 1024;
 const TITLE_BACK_BYTES = 64 * 1024 * 1024;
@@ -694,12 +696,12 @@ const CX_TURN_END = [B('"payload":{"type":"task_complete"'), B('"payload":{"type
 // 뒤에서 앞으로 가며 Codex의 마지막 활동 기록 시각을 찾는다(머리 기록·설정 기록은 건너뜀).
 // 그 기록이 턴 끝(task_complete·turn_aborted)이면 lastCodexEnded를 true로 둔다: 답을 마친 대화를 90초 동안 "작업 중"으로 두지 않게
 let lastCodexEnded = false;
-function findLastCodexTs(fd, endPos) {
+function findLastCodexTs(fd, endPos, maxBytes = TITLE_BACK_BYTES) {
   lastCodexEnded = false;
   const step = 256 * 1024;
   let pos = endPos;
   let read = 0;
-  while (pos > 0 && read < TITLE_BACK_BYTES) {
+  while (pos > 0 && read < maxBytes) {
     const from = Math.max(0, pos - step);
     const buf = Buffer.allocUnsafe(pos - from);
     const n = fs.readSync(fd, buf, 0, pos - from, from);
@@ -1200,7 +1202,16 @@ function scanMeta(st) {
   try {
     const stat = fs.fstatSync(fd);
     Object.assign(st, newFileState(st));
-    read += scanHead(st, fd, Math.min(HEAD_BYTES, stat.size));
+    if (st.agent === 'codex') {
+      // Codex 목록용 요약은 작업 폴더·첫 질문만 있으면 된다. 64KB → 256KB → 1MB로 늘려 가며 찾으면 그만 읽는다
+      // (옛 대화·검토 스레드 수백 개를 처음 읽을 때 1MB씩 읽어 수백 MB가 됐다. 첫 줄(session_meta)은 50KB 안쪽이라
+      // 검토 스레드는 64KB에서 끝난다)
+      for (const cap of [64 * 1024, CODEX_HEAD_BYTES, HEAD_BYTES]) {
+        Object.assign(st, newFileState(st));
+        read += scanHead(st, fd, Math.min(cap, stat.size));
+        if ((st.sub && st.cwd) || (st.cwd && st.firstPrompt) || stat.size <= cap) break;
+      }
+    } else read += scanHead(st, fd, Math.min(HEAD_BYTES, stat.size));
     if (st.agent !== 'codex') {
       const headTitle = { customTitle: st.customTitle, aiTitle: st.aiTitle };
       st.customTitle = null;
@@ -1208,7 +1219,12 @@ function scanMeta(st) {
       read += findLastTitle(st, fd, stat.size, stat.size);
       if (!st.customTitle && !st.aiTitle) Object.assign(st, headTitle);
       st.lastMsgTs = findLastMessageTs(fd, stat.size);
-    } else { st.lastMsgTs = findLastCodexTs(fd, stat.size); st.cxEnded = lastCodexEnded; }
+    } else if (st.sub) {
+      // 옛 하위 스레드(검토 등): 목록에는 뿌리 대화만 나온다. 이런 기록은 대화를 줄여 담은 큰 줄과 설정 줄뿐이라
+      // 마지막 활동을 찾으려면 파일을 통째로 거꾸로 읽게 되므로 찾지 않는다(뿌리 대화의 마지막 활동에 보탤 것이 없다)
+      st.lastMsgTs = 0;
+      st.cxEnded = false;
+    } else { st.lastMsgTs = findLastCodexTs(fd, stat.size, CODEX_META_BACK_BYTES); st.cxEnded = lastCodexEnded; }
     st.metaOnly = true;
     st.scanFrom = stat.size;
     st.offset = stat.size;
@@ -1418,12 +1434,15 @@ function localDay(ms) {
 }
 
 // Codex 기록은 "세션을 시작한 날" 폴더에 있다. 며칠·몇 주씩 이어 쓰는 세션이 있으니
-// 보는 기간보다 CODEX_BACK_DAYS일 앞 폴더까지 훑고, 파일이 바뀐 시각으로 거른다
+// 보는 기간보다 CODEX_BACK_DAYS일 앞 폴더까지 훑고, 파일이 바뀐 시각으로 거른다.
+// listSinceMs: Claude 세션처럼, 보는 기간보다 오래된 Codex 대화도 이 시각까지는 목록용으로 찾는다(meta: true).
+// 이게 없으면 보는 기간(예: 30분)보다 오래된 Codex 대화가 목록에도 보관함에도 없이 사라졌다(11-16)
 const CODEX_BACK_DAYS = 60;
-function discoverCodex(sinceMs) {
+function discoverCodex(sinceMs, listSinceMs) {
   const out = [];
   const seen = new Set();
-  for (let t = sinceMs - CODEX_BACK_DAYS * 86400e3; t <= Date.now() + 3600e3; t += 86400e3) {
+  const cut = listSinceMs > 0 && listSinceMs < sinceMs ? listSinceMs : sinceMs;
+  for (let t = cut - CODEX_BACK_DAYS * 86400e3; t <= Date.now() + 3600e3; t += 86400e3) {
     const dir = path.join(CODEX_SESSIONS, ...localDay(t));
     if (seen.has(dir)) continue;
     seen.add(dir);
@@ -1432,9 +1451,11 @@ function discoverCodex(sinceMs) {
     for (const n of names) {
       if (!n.startsWith('rollout-') || !n.endsWith('.jsonl')) continue;
       const f = path.join(dir, n);
-      try { if (fs.statSync(f).mtimeMs < sinceMs) continue; } catch { continue; }
+      let mt;
+      try { mt = fs.statSync(f).mtimeMs; } catch { continue; }
+      if (mt < cut) continue;
       const m = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/.exec(n);
-      out.push({ file: f, sid: 'codex:' + (m ? m[1] : n), sub: false, project: 'codex', agent: 'codex' });
+      out.push({ file: f, sid: 'codex:' + (m ? m[1] : n), sub: false, project: 'codex', agent: 'codex', ...(mt < sinceMs ? { meta: true } : {}) });
     }
   }
   return out;
@@ -1443,7 +1464,9 @@ function discoverCodex(sinceMs) {
 // listSinceMs·projectDirs: 이 폴더의 세션은 보는 기간보다 오래돼도(listSinceMs까지) 목록용으로 찾는다(meta: true)
 // otherListSinceMs: 다른 폴더의 세션도 이 시각까지는 목록용으로 찾는다(보통 더 짧은 기간)
 function discover(sinceMs, registry, includeCodex, listSinceMs, projectDirs, otherListSinceMs) {
-  const out = includeCodex ? discoverCodex(sinceMs) : [];
+  // Codex는 어느 폴더 대화인지 기록을 열어 봐야 알므로 둘 중 긴 기간으로 찾고, 폴더별 기간은 읽은 뒤에 거른다(scan 끝)
+  const codexList = [listSinceMs, otherListSinceMs].filter((x) => x > 0);
+  const out = includeCodex ? discoverCodex(sinceMs, codexList.length ? Math.min(...codexList) : 0) : [];
   let projs = [];
   try { projs = fs.readdirSync(PROJECTS, { withFileTypes: true }); } catch { return out; }
   for (const p of projs) {
@@ -1876,10 +1899,14 @@ function createModel() {
     if (opts.onProgress && bytes > 0 && Date.now() - t0 > 300) opts.onProgress({ sessions: build(registry, since, t0, opts, true) });
     // 요약만 읽은 옛 세션은 Claude Code 세션 목록에 나오는 것만: 목록 기간 안이고, 프로그램이 돌린 세션이 아닌 것
     // 제목도 첫 질문도 없는 세션(다른 세션이 보낸 메시지나 로컬 명령만 있는 것)도 Claude Code처럼 뺀다
+    const wsDirs = (Array.isArray(opts.workspaceDirs) ? opts.workspaceDirs : []).map(String);
+    const inWs = (cwd) => !!cwd && wsDirs.some((d) => cwd === d || cwd.startsWith(d + path.sep));
     const sessions = build(registry, since, t0, opts, false).filter((s) => {
       if (!s.metaOnly) return true;
       if (s.programmatic || s.titleSource === 'id') return false;
-      const cut = dirSet.has(s.projectDir) ? listSince : otherSince;
+      // Codex 기록은 폴더 이름으로 나뉘지 않으니 작업 폴더(cwd)로 이 폴더 대화인지 본다
+      const here = s.agent === 'codex' ? inWs(s.cwd) : dirSet.has(s.projectDir);
+      const cut = here ? listSince : otherSince;
       return !!cut && s.lastActivity >= cut;
     });
     maybeSave(opts, !!opts.flush);
