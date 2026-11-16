@@ -4,6 +4,8 @@
 
 - **Sessions from other folders open with one click.** Claude Code opens a conversation only in a window with its folder open, so before, clicking a session from another folder only said where to open it. Now it brings up the VS Code window of that folder and that window opens the conversation. When no window has that folder open, Watchtower asks first and then opens it in a new window (on the same remote server for a remote window).
 - The hand-over is a small request file in Watchtower's own storage with the session ID, its folder and the time. Only a window with that folder open takes it, only one window takes it, and a request older than two minutes is dropped, so a conversation never opens in the wrong folder or later by surprise.
+- **Files changed outside the session's folder are found.** When a command changes a file in another repository by its full path (for example a Python snippet that writes `/path/to/other-repo/note.txt`, as the Codex panel does), Watchtower now also looks in the repositories of the existing paths written in the command, not only in the folder the command ran in. Applies to Codex and Claude shell commands; such files are marked as estimated, like other script changes.
+- **Codex sessions stop "thinking" when the turn ends.** A Codex session whose last record is the end of a turn (`task_complete` or `turn_aborted`) is shown as idle right away, instead of working for another 90 seconds. A session still in the middle of a turn keeps the 90-second rule.
 
 ## 0.28.5
 

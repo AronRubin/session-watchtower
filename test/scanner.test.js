@@ -366,6 +366,49 @@ test('Codex 요즘 형식: exec 안의 tools.apply_patch·exec_command, 실패�
   assert.strictEqual(S.codexPatchText({ type: 'custom_tool_call', name: 'exec', input: 'const patch = "*** Begin Patch\\n*** Add File: a.txt\\n+\\u00e9\\n*** End Patch"; tools.apply_patch(patch)' }), '*** Begin Patch\n*** Add File: a.txt\n+é\n*** End Patch');
 });
 
+test('Codex: 작업 폴더 밖 저장소의 파일을 파이썬으로 고친 명령도 찾고, 턴을 마친 대화는 90초를 기다리지 않고 바로 쉼', (t) => {
+  try { execFileSync('git', ['--version'], { stdio: 'ignore' }); } catch { t.skip('git 없음'); return; }
+  // 실제로 본 모양(11-13): VS Code Codex 패널이 exec 안의 tools.exec_command로 파이썬을 돌려 다른 저장소의 파일을 고쳤다. workdir은 이 폴더
+  const repo = path.join(home, 'work', 'pathtest');
+  fs.mkdirSync(repo, { recursive: true });
+  const note = path.join(repo, 'note.txt');
+  fs.writeFileSync(note, 'one\ntwo\n');
+  const git = (...args) => execFileSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', '-c', 'commit.gpgsign=false', ...args], { stdio: 'ignore' });
+  git('init', '-q'); git('add', '-A'); git('commit', '-q', '-m', 'seed');
+  const T = Date.now();
+  fs.writeFileSync(note, 'one\n수정됨\n');
+  fs.utimesSync(note, new Date(T - 40000), new Date(T - 40000));
+  const DONE = 'c0de0000-3333-4333-8333-00000000cccc';
+  const BUSY = 'c0de0000-4444-4444-8444-00000000dddd';
+  const js = (x) => JSON.stringify(x);
+  const py = `python3 - <<'PY'\nfrom pathlib import Path\np = Path(${js(note).replace(/"/g, "'")})\nlines = p.read_bytes().split(b'\\n')\nlines[1] = '수정됨'.encode()\np.write_bytes(b'\\n'.join(lines))\nPY`;
+  const ev = (ts, type, extra) => ({ timestamp: fx.iso(ts), type: 'event_msg', payload: { type, ...extra } });
+  fx.codexSession(home, DONE, [
+    { timestamp: fx.iso(T - 60000), type: 'session_meta', payload: { id: DONE, session_id: DONE, cwd: project, originator: 'codex_vscode', source: 'vscode' } },
+    ev(T - 60000, 'task_started', {}),
+    { timestamp: fx.iso(T - 60000), type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Change the second line of note.txt' }] } },
+    { timestamp: fx.iso(T - 45000), type: 'response_item', payload: { type: 'custom_tool_call', status: 'completed', call_id: 'c1', name: 'exec', input: `const r = await tools.exec_command({ cmd: ${js(py)}, workdir: ${js(project)}, sandbox_permissions: "require_escalated" });\ntext(r);` } },
+    { timestamp: fx.iso(T - 38000), type: 'response_item', payload: { type: 'custom_tool_call_output', call_id: 'c1', output: [{ type: 'input_text', text: 'Script completed\nOutput:\n' }] } },
+    ev(T - 30000, 'agent_message', { message: 'Done.' }),
+    { timestamp: fx.iso(T - 30000), type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Done.' }] } },
+    ev(T - 30000, 'token_count', {}),
+    ev(T - 20000, 'task_complete', { root_turn_id: 'x' }),
+  ], T - 20000);
+  fx.codexSession(home, BUSY, [
+    { timestamp: fx.iso(T - 50000), type: 'session_meta', payload: { id: BUSY, session_id: BUSY, cwd: project, originator: 'codex_vscode', source: 'vscode' } },
+    ev(T - 50000, 'task_started', {}),
+    { timestamp: fx.iso(T - 50000), type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Still thinking' }] } },
+    { timestamp: fx.iso(T - 20000), type: 'response_item', payload: { type: 'reasoning', summary: [] } },
+  ], T - 20000);
+  const r = S.createModel().scan(base());
+  const done = find(r, 'codex:' + DONE);
+  assert.deepStrictEqual(done.changes.filter((c) => c.path === note).map((c) => [c.kind, c.via]), [['shell', 'mtime']], '명령 속 절대 경로의 저장소에서 바뀐 파일을 찾는다');
+  assert.deepStrictEqual([done.alive, done.status], [false, null], '턴을 마쳤으면 쉼(20초 전에 끝났어도)');
+  const busy = find(r, 'codex:' + BUSY);
+  assert.deepStrictEqual([busy.alive, busy.status], [true, 'busy'], '턴 중이고 최근에 기록했으면 작업 중');
+  assert.deepStrictEqual(S.pathDirsIn(`cat ${note} https://example.invalid/a/b /`), [repo], '있는 경로의 폴더만, 주소와 뿌리는 뺀다');
+});
+
 test('Codex: 며칠 전에 시작해 지금도 쓰는 세션을 찾는다(기록은 시작한 날 폴더에 있다)', () => {
   const LONG = 'c0de0000-3333-4333-8333-00000000cccc';
   const f = path.join(project, 'cx-long.txt');

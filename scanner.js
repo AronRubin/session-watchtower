@@ -580,8 +580,29 @@ function tsBefore(line) {
   return Date.parse(line.toString('latin1', s, e)) || 0;
 }
 
+// 명령 글자 속 절대 경로(따옴표·여기 문서 안도)가 가리키는 폴더. 작업 폴더 밖 저장소의 파일을
+// 파이썬 등으로 고친 명령도 그 저장소를 보게 한다(예: Path('/다른/저장소/note.txt').write_bytes(…)). 있는 파일·폴더만
+const ABS_PATH_RE = /(?:^|[\s"'`=(,:[{])((?:~|\$HOME|\$\{HOME\})?\/[^\s"'`;|&<>(){}[\],]+)/g;
+function pathDirsIn(cmd) {
+  const out = [];
+  const src = String(cmd || '').slice(0, 20000);
+  ABS_PATH_RE.lastIndex = 0;
+  let m;
+  for (let i = 0; i < 40 && out.length < 6 && (m = ABS_PATH_RE.exec(src)); i++) {
+    const p = resolveTarget(m[1], null);
+    if (!p) continue;
+    let d = null;
+    try { d = fs.statSync(p).isDirectory() ? p : path.dirname(p); } catch { /* 아직 없거나 지운 파일: 그 폴더가 있으면 본다 */
+      try { if (fs.statSync(path.dirname(p)).isDirectory()) d = path.dirname(p); } catch { d = null; }
+    }
+    if (d && d !== path.parse(d).root && !out.includes(d)) out.push(d);
+  }
+  return out;
+}
+
 // 커밋 명령이 실행된 git 폴더(앞의 cd, git -C 반영)
-// 명령이 실제로 돈 폴더들: 시작 폴더에서 출발해 "cd X &&"를 따라간다(cd만 하고 지나간 폴더는 뺀다)
+// 명령이 실제로 돈 폴더들: 시작 폴더에서 출발해 "cd X &&"를 따라간다(cd만 하고 지나간 폴더는 뺀다).
+// 명령 속 절대 경로의 폴더도 덧붙인다(그 폴더들이 속한 저장소에서 시간대 안에 바뀐 파일을 찾는다)
 function dirsFor(cmd, cwd) {
   let cur = cwd;
   const used = new Set();
@@ -596,7 +617,9 @@ function dirsFor(cmd, cwd) {
     }
     if (cur) used.add(cur);
   }
-  return [...used].slice(0, 4);
+  const first = [...used].slice(0, 4);
+  for (const d of pathDirsIn(cmd)) if (!first.includes(d)) first.push(d);
+  return first.slice(0, 10);
 }
 
 function gitDirFor(cmd, cwd) {
@@ -663,8 +686,13 @@ const CX_FAILED = B('"text":"Script failed');
 const CX_SETTINGS = B('"thread_settings_applied"');
 // 대화를 줄여 담는 기록(compaction·compacted)도 활동으로 치지 않는다. 확장이 옛 대화를 열 때 붙는 검토용 하위 스레드에는 이것만 들어 있다
 const CX_COMPACTION = B('"type":"compaction"');
-// 뒤에서 앞으로 가며 Codex의 마지막 활동 기록 시각을 찾는다(머리 기록·설정 기록은 건너뜀)
+const CX_EVENT = B('"type":"event_msg"');
+const CX_TURN_END = [B('"payload":{"type":"task_complete"'), B('"payload":{"type":"turn_aborted"')];
+// 뒤에서 앞으로 가며 Codex의 마지막 활동 기록 시각을 찾는다(머리 기록·설정 기록은 건너뜀).
+// 그 기록이 턴 끝(task_complete·turn_aborted)이면 lastCodexEnded를 true로 둔다: 답을 마친 대화를 90초 동안 "작업 중"으로 두지 않게
+let lastCodexEnded = false;
 function findLastCodexTs(fd, endPos) {
+  lastCodexEnded = false;
   const step = 256 * 1024;
   let pos = endPos;
   let read = 0;
@@ -684,7 +712,10 @@ function findLastCodexTs(fd, endPos) {
       const head = buf.subarray(j, Math.min(n, j + 200));
       if (atStart && head.indexOf(CX_SETTINGS) < 0 && head.indexOf(CX_META) < 0 && head.indexOf(CX_COMPACTION) < 0 && head.indexOf(CX_COMPACT) < 0) {
         const ts = recordTs(head.subarray(0, 64), -1);
-        if (ts) return ts;
+        if (ts) {
+          lastCodexEnded = head.indexOf(CX_EVENT) >= 0 && CX_TURN_END.some((k) => head.indexOf(k) >= 0);
+          return ts;
+        }
       }
       end = j;
       if (end <= 0) break;
@@ -1141,7 +1172,7 @@ function scanAppended(st, sinceMs, seekMinBytes) {
     st.size = stat.size;
     st.mtimeMs = stat.mtimeMs;
     // Codex: 파일이 바뀐 시각 말고 마지막 활동 기록의 시각(확장이 옛 대화에 설정 기록만 덧붙여도 "방금"이 되지 않게)
-    if (st.agent === 'codex') st.lastMsgTs = findLastCodexTs(fd, stat.size);
+    if (st.agent === 'codex') { st.lastMsgTs = findLastCodexTs(fd, stat.size); st.cxEnded = lastCodexEnded; }
     if (st.scanFrom > 0 && st.agent !== 'codex') {
       if (!st.sub && !st.customTitle && !st.aiTitle && !st.titleSearched) {
         st.titleSearched = true;
@@ -1174,7 +1205,7 @@ function scanMeta(st) {
       read += findLastTitle(st, fd, stat.size, stat.size);
       if (!st.customTitle && !st.aiTitle) Object.assign(st, headTitle);
       st.lastMsgTs = findLastMessageTs(fd, stat.size);
-    } else st.lastMsgTs = findLastCodexTs(fd, stat.size);
+    } else { st.lastMsgTs = findLastCodexTs(fd, stat.size); st.cxEnded = lastCodexEnded; }
     st.metaOnly = true;
     st.scanFrom = stat.size;
     st.offset = stat.size;
@@ -1943,7 +1974,9 @@ function createModel() {
       if (!title && main.firstPrompt) { title = main.firstPrompt; titleSource = 'prompt'; }
       if (!title) { title = codex ? 'Codex ' + sid.slice(6, 14) : sid.slice(0, 8); titleSource = 'id'; }
       // Codex는 실행 중 목록이 없어 최근 기록 시각으로만 작업 중을 짐작한다
-      const codexActive = codex && t0 - lastActivity < CODEX_ACTIVE_MS;
+      // 최근 90초 안에 기록한 스레드(본 대화·하위 스레드)가 모두 턴을 마쳤으면 바로 쉼. 하나라도 턴 중이면 작업 중
+      const cxRecent = codex ? sts.filter((x) => x.lastMsgTs && t0 - x.lastMsgTs < CODEX_ACTIVE_MS) : [];
+      const codexActive = codex && t0 - lastActivity < CODEX_ACTIVE_MS && !(cxRecent.length && cxRecent.every((x) => x.cxEnded));
       let state = {
         alive: codex ? codexActive : !!reg,
         status: codex ? (codexActive ? 'busy' : null) : reg ? reg.status : null,
@@ -1997,4 +2030,4 @@ function scanOne(file, agent, sinceMs, seekMinBytes) {
   return st;
 }
 
-module.exports = { LIVE_MS, codexPatchText, looksReadOnly, createPromptIndex, createModel, shellTargets, stripHeredocBodies, hunkCounts, isScratch, readRegistry, parsePatch, attentionMarker, scanOne };
+module.exports = { LIVE_MS, pathDirsIn, codexPatchText, looksReadOnly, createPromptIndex, createModel, shellTargets, stripHeredocBodies, hunkCounts, isScratch, readRegistry, parsePatch, attentionMarker, scanOne };
