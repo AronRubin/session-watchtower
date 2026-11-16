@@ -46,6 +46,14 @@ exports.activate = async () => {
     await run('notifications.clearAll');
     return;
   }
+  if (scene === 'builtin') {
+    // the built-in phone board: turned on in settings (see shoot.sh), then the link panel made by the extension itself
+    await sleep(9000);
+    run('claudeSessionChanges.phoneBoardPair');
+    await sleep(4000);
+    await run('notifications.clearAll');
+    return;
+  }
   if (scene === 'fold') {
     // the board with Sessions and Instructions and results folded (see shoot.sh)
     await sleep(9000);

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Take a real screenshot of the extension: desktop VS Code on a virtual display (Xvfb), with made-up demo sessions in a throwaway home folder.
 # Usage: xvfb-run -a -s "-screen 0 2400x2400x24" tools/screenshot/shoot.sh "<theme name>" <full.png> [scene]
-# Scenes: side (default), toasts, search, file, review, summary, tabs, groups, roles, fold, roster, mcp, phone — see helper/main.js. "gif" and "explorer" write numbered frames next to <full.png>.
+# Scenes: side (default), toasts, search, file, review, summary, tabs, groups, roles, fold, roster, mcp, phone, builtin — see helper/main.js. "gif" and "explorer" write numbered frames next to <full.png>.
 # Needs: desktop VS Code (CODE_BIN), xvfb-run, ImageMagick (import), node, python3.
 set -u
 V="$(cd "$(dirname "$0")" && pwd)"; REPO="$(cd "$V/../.." && pwd)"
@@ -96,6 +96,10 @@ if [ "$SCENE" = phone ]; then
   node -e 'require("http").createServer((q, r) => { if (q.url === "/healthz") { r.writeHead(200, { "X-Session-Board": "1", "X-Session-Board-Label": encodeURIComponent("my-laptop") }); r.end("ok"); } else { r.writeHead(404); r.end(); } }).listen(15290, "127.0.0.1")' &
   FAKEBOARD=$!
   sed -i "s#^{#{\n  \"claudeSessionChanges.phoneBoard.ports\": [15290],\n  \"claudeSessionChanges.phoneBoard.folder\": \"$RUN/board\",#" "$RUN/ud/User/settings.json"
+fi
+if [ "$SCENE" = builtin ]; then
+  # the built-in phone board on a spare port (nothing else listens there, Tailscale serve does not forward it)
+  sed -i "s#^{#{\n  \"claudeSessionChanges.phoneBoard.enabled\": true,\n  \"claudeSessionChanges.phoneBoard.port\": 15291,\n  \"claudeSessionChanges.phoneBoard.label\": \"my-laptop\",#" "$RUN/ud/User/settings.json"
 fi
 # Start with a clean environment: variables of a VS Code remote shell (ELECTRON_RUN_AS_NODE ...) stop the desktop app from starting.
 env -i HOME="$RUN/home" PATH="$PATH" DISPLAY="$DISPLAY" XAUTHORITY="${XAUTHORITY:-}" LANG="${LANG:-en_US.UTF-8}" XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}" SWT_SCENE="$SCENE" SWT_DEMO="$RUN/home/demo.json" \
