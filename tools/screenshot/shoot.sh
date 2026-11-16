@@ -1,7 +1,7 @@
 #!/bin/bash
 # Take a real screenshot of the extension: desktop VS Code on a virtual display (Xvfb), with made-up demo sessions in a throwaway home folder.
 # Usage: xvfb-run -a -s "-screen 0 2400x2400x24" tools/screenshot/shoot.sh "<theme name>" <full.png> [scene]
-# Scenes: side (default), toasts, search, file, review, summary, tabs, groups, roles, fold, roster, mcp, phone, builtin — see helper/main.js. "gif" and "explorer" write numbered frames next to <full.png>.
+# Scenes: side (default), toasts, search, file, review, summary, tabs, groups, roles, fold, roster, mcp, phone, builtin, codexnew — see helper/main.js. "gif" and "explorer" write numbered frames next to <full.png>.
 # Needs: desktop VS Code (CODE_BIN), xvfb-run, ImageMagick (import), node, python3.
 set -u
 V="$(cd "$(dirname "$0")" && pwd)"; REPO="$(cd "$V/../.." && pwd)"
@@ -97,6 +97,14 @@ if [ "$SCENE" = phone ]; then
   FAKEBOARD=$!
   sed -i "s#^{#{\n  \"claudeSessionChanges.phoneBoard.ports\": [15290],\n  \"claudeSessionChanges.phoneBoard.folder\": \"$RUN/board\",#" "$RUN/ud/User/settings.json"
 fi
+EXTRA_EXT=()
+if [ "$SCENE" = codexnew ]; then
+  # the installed Codex extension (CODEX_EXT, default: the newest openai.chatgpt in ~/.vscode-server/extensions), loaded for this run only.
+  # HOME is the stand-in home of this run, so Codex sees no login and none of your Codex settings
+  CODEX_EXT="${CODEX_EXT:-$(ls -d "$HOME"/.vscode-server/extensions/openai.chatgpt-* 2>/dev/null | tail -1)}"
+  [ -n "$CODEX_EXT" ] && EXTRA_EXT=(--extensionDevelopmentPath="$CODEX_EXT")
+  sed -i "s#^{#{\n  \"claudeSessionChanges.newSessionTool\": \"codex\",#" "$RUN/ud/User/settings.json"
+fi
 if [ "$SCENE" = builtin ]; then
   # the built-in phone board on a spare port (nothing else listens there, Tailscale serve does not forward it)
   sed -i "s#^{#{\n  \"claudeSessionChanges.phoneBoard.enabled\": true,\n  \"claudeSessionChanges.phoneBoard.port\": 15291,\n  \"claudeSessionChanges.phoneBoard.label\": \"my-laptop\",#" "$RUN/ud/User/settings.json"
@@ -104,7 +112,7 @@ fi
 # Start with a clean environment: variables of a VS Code remote shell (ELECTRON_RUN_AS_NODE ...) stop the desktop app from starting.
 env -i HOME="$RUN/home" PATH="$PATH" DISPLAY="$DISPLAY" XAUTHORITY="${XAUTHORITY:-}" LANG="${LANG:-en_US.UTF-8}" XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}" SWT_SCENE="$SCENE" SWT_DEMO="$RUN/home/demo.json" \
 "$CODE_BIN" --no-sandbox --disable-gpu --force-device-scale-factor=2 --user-data-dir="$RUN/ud" --extensions-dir="$RUN/ext" \
-  --extensionDevelopmentPath="$REPO" --extensionDevelopmentPath="$V/helper" --locale=en --disable-workspace-trust --skip-welcome --skip-release-notes \
+  --extensionDevelopmentPath="$REPO" --extensionDevelopmentPath="$V/helper" "${EXTRA_EXT[@]}" --locale=en --disable-workspace-trust --skip-welcome --skip-release-notes \
   --new-window "$RUN/ws/web-app" > "$RUN/code.log" 2>&1 &
 CODE=$!
 if [ "$SCENE" = gif ]; then

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.34.0
+
+- **The board says when the roles table cannot be read.** When a group's shared memo is linked but its *Sessions and roles* table cannot be read, the board warns (the tags then show the roles set by hand) and copies a note for the lead with the exact table shape Watchtower reads.
+- **A deploy move is flagged.** When the board table gives the deploy role to a session that did not have it, the board and a one-time notification ask you to check that the user approved it, until you confirm. Watchtower does not undo it; a deploy role you set by hand counts as approved, and a shrinking or first deploy assignment is not flagged.
+- The lead's note and the lead request now say to update the *Doing now* cell (and the role cell) of the table every time the lead sends an instruction, so the tags keep up with the real work.
+- **Checklists come with a scoreboard script.** When the lead creates the checklists, it also writes a short script that recounts the item states and rewrites the scoreboard between `<!-- progress-scoreboard:begin -->` and its end marker, with `--check` for tests or CI. Item lines use fixed state words (passed, partly, left, blocked, failed) and the test checklist a layer.
+- A screenshot scene for the Codex new agent (`codexnew`) confirmed that *New Codex Agent* opens a Codex tab.
+
 ## 0.33.0
 
 - **New session can open Codex.** The setting `newSessionTool` chooses what the Sessions view's **New session** button opens: `claude` (a new Claude Code conversation, as before) or `codex` (a new Codex chat: the Codex extension's *New Codex Agent*, its sidebar chat if that fails, or the Codex CLI in a terminal when the extension is not installed). The button's tooltip says which one.

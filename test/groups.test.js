@@ -326,7 +326,8 @@ test('팀 구성 추천 받기: 만들 것과 세션 수를 받아, 역할 목�
   assert.match(t, /\(5\) whether the four team documents exist \(plan, design, development checklist, test checklist; a file with another name that does the same job counts\)/);
   assert.ok(t.includes('## Step 2.1: team documents (only those the user agreed to in step 1 (5))'));
   assert.match(t, /Create documents only after the user approves; use existing ones as they are/);
-  assert.match(t, /# <project name> development checklist\nDocuments: [^\n]*\n\n## Progress scoreboard\n\n\*\*Passed 0 \/ 0 \(0%\)\*\* `░{10}`/, '개발 체크리스트 맨 위가 진행 점수표');
+  assert.match(t, /# <project name> development checklist\nDocuments: [^\n]*\n\n<!-- progress-scoreboard:begin -->\n## Progress scoreboard\n\n\*\*Passed 0 \/ 0 \(0%\)\*\* `░{10}`/, '개발 체크리스트 맨 위가 진행 점수표(자동으로 다시 쓰는 구간 표시 안)');
+  assert.match(t, /you also create a short script that rewrites it[^\n]*with --check fails when the table is out of date/, '점수표를 다시 쓰는 스크립트도 함께 만들게');
   assert.ok(t.includes('Documents: plan <path> · design <path> · development checklist <path> · test checklist <path>'), '보드 제목 아래 문서 줄');
   await waitFor(() => stub.calls.filter((c) => c[0] === 'claude-vscode.editor.open' && c.length === 1).length > opened, '새 세션 열기');
 
@@ -438,6 +439,46 @@ test('유동 역할: 보드의 "세션과 역할" 표가 역할을 정하고(손
 
   panel.send({ type: 'unlinkMemo' });
   await waitFor(() => team('Chatbot ops').rows.find((r) => r.sid === SID.w).role === 'Watch', '보드를 끊으면 손으로 정한 역할로', 15000);
+});
+
+test('보드 표를 못 읽으면 알리고 표 고치기 글을 주며, 보드 표가 배포 담당을 옮기면 확인할 때까지 알린다. 대장 안내는 지시마다 "지금 하는 일" 칸을 고치라고 한다', async () => {
+  const panel = stub.state.panels.find((p) => !p.disposed);
+  const memo = path.join(home, 'roles-board.md');
+  // 표가 없는 보드: 꼬리표가 손으로 정한 역할로 돌아간 것을 알리고, 대장에게 줄 고치기 글(확장이 읽는 모양)을 준다
+  fs.writeFileSync(memo, '# Team board\n\nNothing here yet.\n');
+  stub.state.openDialog = memo;
+  panel.send({ type: 'linkMemo' });
+  const p1 = await waitFor(() => { const x = panel.lastPayload(); return x && x.memo.file === memo ? x : null; }, '보드 연결');
+  assert.strictEqual(p1.tableMissing, true, '표를 못 읽음');
+  assert.strictEqual(p1.deployMoved, null, '표를 못 읽는 동안은 배포 이동을 보지 않는다');
+  assert.match(p1.strings.tableMissing, /cannot be read, so the role tags show the roles set by hand/);
+  panel.send({ type: 'copyTableFix' });
+  await waitFor(() => /^\[Board sync\] Session Watchtower cannot read the "Sessions and roles" table/.test(stub.state.clipboard || ''), '표 고치기 글');
+  assert.match(stub.state.clipboard, /\n## 1\. Sessions and roles\n\| Role \| Session name \| Scope \(folders, files\) \| Doing now \(one line\) \|\n/);
+  assert.match(stub.state.clipboard, /\| Watch \| \*\*Watcher\*\* \| \| \|/, '세션 제목을 굵게, 지금 역할을 채워서');
+  // 보드 표가 배포를 Deployer → Watcher로 옮김: 처음 본 배포는 기억만, 옮기면 보드에 경고와 알림(한 번), 확인하면 사라짐
+  const table = (dep, other) => ['# Team board', '', '## 1. Sessions and roles', '| Role | Session name |', '|---|---|', `| Deploy | **${dep}** |`, `| Review | **${other}** |`, '| Docs | **Outside** |', ''].join('\n');
+  fs.writeFileSync(memo, table('Deployer', 'Watcher'));
+  panel.send({ type: 'refresh' });
+  await waitFor(() => { const x = panel.lastPayload(); return x.tableMissing === false && x.members.find((m) => m.title === 'Deployer').role === 'Deploy' ? x : null; }, '표 읽힘');
+  assert.strictEqual(panel.lastPayload().deployMoved, null, '처음 본 배포는 그대로 기억');
+  stub.calls.length = 0;
+  fs.writeFileSync(memo, table('Watcher', 'Deployer'));
+  panel.send({ type: 'refresh' });
+  const mv = await waitFor(() => panel.lastPayload().deployMoved, '배포 이동 경고');
+  assert.deepStrictEqual([mv.from, mv.to], ['Deployer', 'Watcher']);
+  await waitFor(() => stub.calls.filter((c) => c[0] === 'warn' && /^Group "Chatbot ops": the deploy role moved from Deployer to Watcher\. Check that the user approved this change/.test(c[1])).length === 1, '보드를 안 봐도 한 번 알림', 15000);
+  panel.send({ type: 'ackDeploy' });
+  await waitFor(() => panel.lastPayload().deployMoved === null, '확인하면 사라짐');
+  // 대장 안내: 지시를 보낼 때마다 표의 "지금 하는 일" 칸도
+  await pickRoles(() => web.send({ type: 'role', sid: SID.w }), ['Lead']);
+  stub.state.clipboard = '';
+  panel.send({ type: 'brief', sid: SID.w });
+  await waitFor(() => /Handing out roles/.test(stub.state.clipboard || ''), '대장 역할 안내');
+  assert.match(stub.state.clipboard, /Each time you send an instruction to a working session, update that session's "Doing now" cell/);
+  await pickRoles(() => web.send({ type: 'role', sid: SID.w }), ['Watch']);
+  panel.send({ type: 'unlinkMemo' });
+  await waitFor(() => panel.lastPayload().memo.file === '', '연결 끊음');
 });
 
 test('대장: 그룹에 하나뿐인 고정 지위라 왕관 배지로 맨 위에 보이고, 보드 표에 덮이지 않으며, 옮기면 앞 대장은 풀린다', async () => {
@@ -566,14 +607,16 @@ test('그룹 이름 바꾸기와 지우기: 지우면 세션은 그대로 목록
 test('팀 문서 틀: 체크리스트 둘은 제목·문서 줄 바로 아래가 진행 점수표, 막대는 10칸, 숫자 열은 오른쪽 정렬, 테스트 체크리스트에는 시험 층 표', () => {
   for (const ko of [true, false]) {
     const tpl = ext._test.teamDocTemplates(ko);
-    const parts = tpl.split(/\n(?=<!-- )/);
+    const parts = tpl.split(/\n(?=<!-- (?!progress-scoreboard))/); // 문서 머리 주석으로 나눈다(점수표 구간 표시는 빼고)
     assert.strictEqual(parts.length, 4, '문서 넷');
     const [plan, design, dev, test] = parts;
     const board = ko ? '## 진행 점수표' : '## Progress scoreboard';
     for (const doc of [dev, test]) {
       const lines = doc.split('\n');
       assert.strictEqual(lines[3], '', '제목·문서 줄 다음 빈 줄');
-      assert.strictEqual(lines[4], board, '맨 위가 진행 점수표');
+      assert.strictEqual(lines[4], '<!-- progress-scoreboard:begin -->', '점수표 스크립트가 다시 쓰는 구간의 시작');
+      assert.strictEqual(lines[5], board, '맨 위가 진행 점수표');
+      assert.ok(doc.indexOf('<!-- progress-scoreboard:end -->') > doc.indexOf(board), '구간의 끝');
       for (const bar of doc.match(/`[█░]+`/g)) assert.strictEqual([...bar.slice(1, -1)].length, 10, '막대는 10칸');
       assert.ok(doc.includes('|---|---|---:|---:|---:|---:|---:|---:|'), '숫자 열 오른쪽 정렬');
     }

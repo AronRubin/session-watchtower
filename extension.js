@@ -1031,6 +1031,76 @@ function roleWarnings(g, eff) {
   return out;
 }
 
+// 공유 메모(보드)가 연결돼 있는데 "세션과 역할" 표를 한 줄도 못 읽으면 알린다. 이때 꼬리표는 소리 없이 손으로 정한 역할로 돌아가 있다
+function boardTableMissing(g) {
+  if (!g.memo) return false;
+  try { if (!fs.statSync(g.memo).isFile()) return false; } catch { return false; } // 파일이 없으면 메모 칸이 따로 알린다
+  return !boardRowsOf(g.memo).length;
+}
+
+// 대장에게 줄 "표 고치기" 글: 확장이 읽는 모양(절 제목 "세션과 역할", 칸 "역할"·"세션 이름", 이름은 세션 제목 그대로 굵게)
+function boardTableFixText(g, eff) {
+  const ko = isKo();
+  const rows = Object.keys(g.members).map((sid) => {
+    const s = sessionBySid(sid);
+    const e = eff.get(sid) || {};
+    return `| ${e.role || (ko ? '<역할>' : '<role>')} | **${s ? s.title : sid.slice(0, 8)}** | | |`;
+  });
+  return (ko ? [
+    `[보드 맞추기] Session Watchtower가 "${g.name}" 그룹의 협업 보드(${g.memo})에서 "세션과 역할" 표를 읽지 못합니다. 그래서 세션 꼬리표가 보드의 역할을 따르지 못하고 손으로 정한 역할로 보입니다.`, '',
+    '보드의 다른 내용은 그대로 두고, 세션과 역할 절만 아래 모양으로 맞춰 주세요: 절 제목에 "세션과 역할", 표의 칸 이름은 "역할"과 "세션 이름", 세션 이름은 아래 제목 그대로 **굵게**.', '',
+    '## 1. 세션과 역할', '| 역할 | 세션 이름 | 맡은 범위(폴더·파일) | 지금 하는 일(한 줄) |', '|---|---|---|---|', ...rows,
+  ] : [
+    `[Board sync] Session Watchtower cannot read the "Sessions and roles" table of the team board of the group "${g.name}" (${g.memo}), so the session tags show the roles set by hand instead of the board's.`, '',
+    'Leave the rest of the board as it is and make that section look like this: "Sessions and roles" in the section title, columns named "Role" and "Session name", each session name in **bold**, exactly as below.', '',
+    '## 1. Sessions and roles', '| Role | Session name | Scope (folders, files) | Doing now (one line) |', '|---|---|---|---|', ...rows,
+  ]).join('\n') + '\n';
+}
+
+// 보드 표가 배포 담당을 다른 세션으로 옮기면 알린다(두 세션이 각자 서버에 올리는 사고를 막으려고). 확장은 되돌리지 않는다: 사용자가 대화로 승인했을 수 있다.
+// 그룹마다 마지막으로 확인한, 보드 표가 정한 배포 세션들을 기억해 두고(처음 본 것은 그대로 기억), 사용자가 손으로 역할을 바꾸면 그것을 확인으로 본다.
+// 보드 표를 못 읽는 동안에는 보지 않는다(표가 처음 읽히는 순간 손으로 정한 역할과 달라 보이는 것은 이동이 아니다)
+const DEPLOY_RE = /deploy|release|배포|승격|릴리스/i;
+const DEPLOY_ACK_KEY = 'claudeSessionChanges.deployAck';
+const deployKeyOf = (eff) => [...eff.entries()].filter(([, v]) => v.source === 'board' && DEPLOY_RE.test(v.role || '')).map(([sid]) => sid).sort().join(',');
+function ackDeploy(g, eff) {
+  if (!ctx) return;
+  const acks = { ...(ctx.globalState.get(DEPLOY_ACK_KEY, {}) || {}) };
+  acks[g.id] = deployKeyOf(eff || effectiveRoles(g));
+  ctx.globalState.update(DEPLOY_ACK_KEY, acks);
+}
+function deployMove(g, eff) {
+  if (!ctx || !loaded || !g.memo || !boardRowsOf(g.memo).length) return null; // 세션 제목을 읽기 전이나 표를 못 읽을 때는 짝을 못 지어 바뀐 것처럼 보일 수 있다
+  const key = deployKeyOf(eff);
+  const acks = ctx.globalState.get(DEPLOY_ACK_KEY, {}) || {};
+  if (acks[g.id] === key) return null;
+  // 새로 배포를 맡은 세션이 있을 때만 알린다. 처음 보거나, 앞에 보드가 정한 배포가 없었거나(아무도 → 누군가),
+  // 배포 담당이 줄기만 했으면(둘 → 하나) 옮긴 것이 아니라 그대로 기억만 한다
+  const before = new Set(String(acks[g.id] || '').split(',').filter(Boolean));
+  const added = key.split(',').filter((sid) => sid && !before.has(sid));
+  if (!(g.id in acks) || !before.size || !added.length) { ackDeploy(g, eff); return null; }
+  const name = (sid) => { const x = sessionBySid(sid); return x ? x.title : sid.slice(0, 8); };
+  const list = (k) => (k ? k.split(',').map(name).join(', ') : L('(no one)'));
+  return { from: list(acks[g.id]), to: list(key), key };
+}
+
+// 보드 화면을 열지 않아도 알 수 있게: 배포가 바뀐 그룹마다 한 번 알림
+const deployNotified = new Set();
+function checkDeployMoves() {
+  if (!loaded) return;
+  for (const g of loadGroups().groups) {
+    const mv = deployMove(g, effectiveRoles(g));
+    if (!mv || deployNotified.has(g.id + '|' + mv.key)) continue;
+    deployNotified.add(g.id + '|' + mv.key);
+    const open = L('Open the group board');
+    const ok = L('The user approved it');
+    Promise.resolve(vscode.window.showWarningMessage(L('Group "{0}": the deploy role moved from {1} to {2}. Check that the user approved this change; only one session should deploy.', g.name, mv.from, mv.to), open, ok)).then((pick) => {
+      if (pick === open) openGroupBoard(g.id);
+      else if (pick === ok) { ackDeploy(g); rebuildSessions(); }
+    });
+  }
+}
+
 // 역할 고르기: 개발 프로젝트에 흔히 필요한 역할 목록에서 하나 이상 고르거나, 직접 쳐서 넣는다(여러 개면 "개발, 시험"처럼 쉼표로)
 function splitRoles(role) {
   return String(role || '').split(/[,،、/]+/).map((x) => x.trim()).filter(Boolean);
@@ -1095,6 +1165,8 @@ function setSessionRole(arg) {
           for (const o of Object.keys(x.members)) if (o !== sid) x.members[o].role = splitRoles(x.members[o].role).filter((r) => !LEAD_RE.test(r)).join(', ');
         } else if (leadOf(x) === sid) x.lead = '__none__';
       });
+      const now = groupOfSession(sid);
+      if (now) ackDeploy(now); // 사용자가 직접 정한 배포는 확인한 것으로 본다
       resolve(role);
     });
     qp.onDidHide(() => { qp.dispose(); if (!done) resolve(undefined); });
@@ -1185,6 +1257,7 @@ function roleBrief(groupId, sid) {
           : `공유 메모가 아직 연결되지 않았습니다. 쓰고 있는 보드 파일이 있으면 그 파일을, 없으면 아래 "새 보드 틀" 그대로 새 보드 파일을 만들어 그 전체 경로를 ${memoRequestPath(groupId)} 파일에 한 줄로 씁니다. Session Watchtower가 몇 초 안에 이 그룹의 공유 메모로 연결합니다(결과는 팀 명단에 적힘). 역할은 그 보드의 "세션과 역할" 표(칸: 역할 · 세션 이름, 이름은 **굵게**)에 적습니다.`,
         '명단에 새 세션이 보이면 표에 줄을 넣고 역할과 첫 지시를 줍니다. 빠진 세션은 줄을 지우고, 하던 일을 남은 세션에 나눕니다. 세션이 너무 적거나 많으면 사용자에게 늘리거나 줄이자고 제안합니다.',
         '역할이나 할 일이 바뀐 세션에는 바로 알립니다: 명단에 메시지 주소가 있으면 그 이름으로 메시지를 보내고, 없으면(Codex·꺼진 세션) 공유 메모에 적고 사용자에게 붙여 넣을 글을 줍니다.',
+        '작업 세션에 지시를 보낼 때마다 같은 차례에 보드 "세션과 역할" 표의 그 세션 "지금 하는 일" 칸(역할이 바뀌었으면 역할 칸도)을 고칩니다. 표가 실제 지시와 같이 움직여야 꼬리표가 옛 역할로 남지 않습니다.',
         '자기 변경을 자기가 검토·시험하지 않게, 같은 파일을 두 세션이 동시에 고치지 않게 나눕니다.',
       ];
       k.forEach((x, i) => L1.push(`${i + 1}. ${x}`));
@@ -1220,6 +1293,7 @@ function roleBrief(groupId, sid) {
           : `No shared memo is linked yet. Write the full path of the board file you use (or a new one you create) on one line in ${memoRequestPath(groupId)}; Session Watchtower links it as this group's shared memo within seconds (the result appears in the team roster). A new board must follow the "New board template" below. Write the roles in that board's "Sessions and roles" table (columns Role and Session name, names in **bold**).`,
         'When a new session appears in the roster, add a row and give it a role and a first instruction. When a session leaves, remove its row and share out its work. If there are too few or too many sessions for the work, suggest adding or removing some to the user.',
         'Tell a session right away when its role or work changes: if the roster shows a message address, message it by that name; otherwise (Codex, or a session that is off) write it in the shared memo and give the user a note to paste.',
+        'Each time you send an instruction to a working session, update that session\'s "Doing now" cell (and its role cell if the role changed) in the board\'s "Sessions and roles" table in the same step, so the tags never lag behind the real instructions.',
         'Never let a session review or test its own change, and never have two sessions change the same files at once.',
       ];
       k.forEach((x, i) => L1.push(`${i + 1}. ${x}`));
@@ -1418,39 +1492,40 @@ function teamDocTemplates(ko) {
   const zero = '`░░░░░░░░░░` 0% | 0 | 0 | 0 | 0 | 0 | 0 |';
   const summary = ko ? '**전체 통과 0 / 0 (0%)** `░░░░░░░░░░` · 일부 통과 0 · 막힘 0 · 실패 0' : '**Passed 0 / 0 (0%)** `░░░░░░░░░░` · partly 0 · blocked 0 · failed 0';
   const rule = ko
-    ? '세는 규칙: 통과는 증거(커밋·시험 결과)가 있을 때만 셉니다. 일부 통과는 통과로 세지 않습니다. 막대는 10칸, 채운 칸 = 통과율을 10으로 나눈 몫(100%일 때만 10칸). 숫자는 아래 항목의 상태를 세어 다시 계산하고 손으로 숫자만 고치지 않습니다. 상태를 바꾼 세션이 같은 변경에서 점수표도 고칩니다.'
-    : 'Counting: an item passes only with evidence (a commit, a test result). Partly passed does not count as passed. The bar has 10 cells; filled cells = pass rate divided by 10, rounded down (10 only at 100%). Recount the numbers from the item states below; never edit only the numbers. The session that changes a state updates this scoreboard in the same change.';
+    ? '세는 규칙: 항목 상태는 통과·일부·남음·막힘·실패 중 하나입니다. 통과는 증거(커밋·시험 결과)가 있을 때만 셉니다. 일부 통과는 통과로 세지 않습니다. 막대는 10칸, 채운 칸 = 통과율을 10으로 나눈 몫(100%일 때만 10칸). 이 표는 점수표 스크립트가 아래 항목의 상태를 세어 다시 씁니다: 손으로 숫자를 고치지 말고, 상태를 바꾼 세션이 같은 변경에서 스크립트를 돌립니다.'
+    : 'Counting: an item state is one of passed, partly, left, blocked, failed. An item passes only with evidence (a commit, a test result). Partly passed does not count as passed. The bar has 10 cells; filled cells = pass rate divided by 10, rounded down (10 only at 100%). The scoreboard script rewrites this table from the item states below: never edit the numbers by hand; the session that changes a state runs the script in the same change.';
   const item = ko ? '- [ ] <항목> — 상태: 남음 · 증거: -' : '- [ ] <item> — state: left · evidence: -';
+  const testItem = ko ? '- [ ] <항목> — 상태: 남음 · 층: 자동 시험 · 증거: -' : '- [ ] <item> — state: left · layer: automated tests · evidence: -';
   return ko ? [
     '<!-- 기획서 (예: docs/PLAN.md) -->', `# ${t} 기획서`, '상태: 초안 · 판 1 · <날짜>', links('기획서'), '',
     '## 1. 목적', '## 2. 쓰는 사람', '## 3. 만들 것', '## 4. 만들지 않을 것', '## 5. 단계', '## 6. 성공 기준', '## 7. 결정 대기 (사용자 결정이 필요한 것)', '',
     '<!-- 설계서 (예: docs/DESIGN.md) -->', `# ${t} 설계서`, '상태: 초안 · 판 1 · <날짜>', links('설계서'), '',
     '## 1. 구조', '## 2. 데이터', '## 3. 외부 연결', '## 4. 보안', '## 5. 대안과 고른 이유', '## 6. 위험', '',
     '<!-- 개발 체크리스트 (예: docs/DEV_CHECKLIST.md) -->', `# ${t} 개발 체크리스트`, links('개발 체크리스트'), '',
-    '## 진행 점수표', '', summary, '', head, sep, `| 1. <단계> | ${zero}`, '', rule, '', '## 1. <단계>', item, '',
+    '<!-- progress-scoreboard:begin -->', '## 진행 점수표', '', summary, '', head, sep, `| 1. <단계> | ${zero}`, '<!-- progress-scoreboard:end -->', '', rule, '', '## 1. <단계>', item, '',
     '<!-- 테스트 체크리스트 (예: docs/TEST_CHECKLIST.md) -->', `# ${t} 테스트 체크리스트`, links('테스트 체크리스트'), '',
-    '## 진행 점수표', '', summary, '', head, sep, `| 1. <단계> | ${zero}`, '',
-    '시험 층:', '', '| 층 | 점수 | 통과 | 일부 | 남음 | 막힘 | 실패 | 전체 |', sep, `| 자동 시험 | ${zero}`, `| 실제 환경 | ${zero}`, `| 사람 확인 | ${zero}`, '',
-    rule + ' 층끼리 서로 대신하지 않습니다(자동 시험 통과가 사람 확인을 대신하지 않음).', '', '## 1. <단계>', item,
+    '<!-- progress-scoreboard:begin -->', '## 진행 점수표', '', summary, '', head, sep, `| 1. <단계> | ${zero}`, '',
+    '시험 층:', '', '| 층 | 점수 | 통과 | 일부 | 남음 | 막힘 | 실패 | 전체 |', sep, `| 자동 시험 | ${zero}`, `| 실제 환경 | ${zero}`, `| 사람 확인 | ${zero}`, '<!-- progress-scoreboard:end -->', '',
+    rule + ' 층끼리 서로 대신하지 않습니다(자동 시험 통과가 사람 확인을 대신하지 않음).', '', '## 1. <단계>', testItem,
   ].join('\n') : [
     '<!-- Plan (for example docs/PLAN.md) -->', `# ${t} plan`, 'State: draft · version 1 · <date>', links('Plan'), '',
     '## 1. Purpose', '## 2. Who uses it', '## 3. What we build', '## 4. What we do not build', '## 5. Stages', '## 6. Success criteria', '## 7. Decisions waiting (for the user)', '',
     '<!-- Design (for example docs/DESIGN.md) -->', `# ${t} design`, 'State: draft · version 1 · <date>', links('Design'), '',
     '## 1. Structure', '## 2. Data', '## 3. External connections', '## 4. Security', '## 5. Alternatives and why this one', '## 6. Risks', '',
     '<!-- Development checklist (for example docs/DEV_CHECKLIST.md) -->', `# ${t} development checklist`, links('Development checklist'), '',
-    '## Progress scoreboard', '', summary, '', head, sep, `| 1. <stage> | ${zero}`, '', rule, '', '## 1. <stage>', item, '',
+    '<!-- progress-scoreboard:begin -->', '## Progress scoreboard', '', summary, '', head, sep, `| 1. <stage> | ${zero}`, '<!-- progress-scoreboard:end -->', '', rule, '', '## 1. <stage>', item, '',
     '<!-- Test checklist (for example docs/TEST_CHECKLIST.md) -->', `# ${t} test checklist`, links('Test checklist'), '',
-    '## Progress scoreboard', '', summary, '', head, sep, `| 1. <stage> | ${zero}`, '',
-    'Test layers:', '', '| Layer | Score | Passed | Partly | Left | Blocked | Failed | Total |', sep, `| Automated tests | ${zero}`, `| Real environment | ${zero}`, `| Human check | ${zero}`, '',
-    rule + ' One layer never stands in for another (passing automated tests does not replace the human check).', '', '## 1. <stage>', item,
+    '<!-- progress-scoreboard:begin -->', '## Progress scoreboard', '', summary, '', head, sep, `| 1. <stage> | ${zero}`, '',
+    'Test layers:', '', '| Layer | Score | Passed | Partly | Left | Blocked | Failed | Total |', sep, `| Automated tests | ${zero}`, `| Real environment | ${zero}`, `| Human check | ${zero}`, '<!-- progress-scoreboard:end -->', '',
+    rule + ' One layer never stands in for another (passing automated tests does not replace the human check).', '', '## 1. <stage>', testItem,
   ].join('\n');
 }
 
 // 대장이 팀 문서 4종을 확인하는 규칙(대장 세션 요청·대장 역할 안내에 같이 쓴다)
 function teamDocCheck(ko) {
   return ko
-    ? '팀 문서: 작업 폴더에 기획서·설계서·개발 체크리스트·테스트 체크리스트가 있는지 한 번 찾아봅니다(이름이 달라도 같은 역할이면 있음). 없는 것이 있으면 사용자에게 만들자고 한 번만 추천합니다. 작은 수정이면 추천하지 않고, 사용자가 거절하면 다시 묻지 않습니다. 만들기는 사용자가 승인한 뒤에만, 있는 문서는 새로 만들지 않고 그대로 씁니다. 체크리스트 둘은 맨 위에 진행 점수표(전체 통과 n / m와 10칸 막대, 단계 표)를 두고, 숫자는 항목 상태를 세어 다시 계산합니다. 공개 저장소면 비밀값·실제 고객 정보를 넣지 않습니다.'
-    : 'Team documents: look once in the project folder for a plan, a design, a development checklist and a test checklist (a file with a different name that does the same job counts). If one is missing, recommend creating it to the user once. Do not recommend it for a small change, and do not ask again after the user says no. Create documents only after the user approves; use existing ones as they are. Both checklists start with a progress scoreboard (passed n / m with a 10-cell bar, and a table per stage), recounted from the item states. In a public repository, put no secrets or real customer data in them.';
+    ? '팀 문서: 작업 폴더에 기획서·설계서·개발 체크리스트·테스트 체크리스트가 있는지 한 번 찾아봅니다(이름이 달라도 같은 역할이면 있음). 없는 것이 있으면 사용자에게 만들자고 한 번만 추천합니다. 작은 수정이면 추천하지 않고, 사용자가 거절하면 다시 묻지 않습니다. 만들기는 사용자가 승인한 뒤에만, 있는 문서는 새로 만들지 않고 그대로 씁니다. 체크리스트 둘은 맨 위에 진행 점수표(전체 통과 n / m와 10칸 막대, 단계 표)를 두고, 점수표를 자동으로 다시 쓰는 스크립트도 함께 만듭니다: 항목 줄의 "상태:"(테스트 체크리스트는 "층:"도)를 세어 <!-- progress-scoreboard:begin -->과 end 사이를 다시 쓰고, --check를 주면 표가 낡았을 때 실패로 끝나게(시험·CI에 넣기 좋게) 합니다. 스크립트는 저장소에서 쓰는 언어로 짧게(예: scripts/scoreboard.py), 항목 상태를 바꾼 세션이 같은 변경에서 돌립니다. 공개 저장소면 비밀값·실제 고객 정보를 넣지 않습니다.'
+    : 'Team documents: look once in the project folder for a plan, a design, a development checklist and a test checklist (a file with a different name that does the same job counts). If one is missing, recommend creating it to the user once. Do not recommend it for a small change, and do not ask again after the user says no. Create documents only after the user approves; use existing ones as they are. Both checklists start with a progress scoreboard (passed n / m with a 10-cell bar, and a table per stage), and you also create a short script that rewrites it: it counts the "state:" of each item line (and "layer:" in the test checklist), rewrites the part between <!-- progress-scoreboard:begin --> and its end marker, and with --check fails when the table is out of date (so tests or CI can run it). Write it in the language the repository already uses (for example scripts/scoreboard.py); the session that changes an item state runs it in the same change. In a public repository, put no secrets or real customer data in them.';
 }
 
 // ---------- 팀 구성 추천 요청 ----------
@@ -1517,6 +1592,7 @@ async function planTeam(groupId) {
       '- 사용자가 "상황"처럼 물으면 보드의 3절 보고와 git 상태(커밋, 커밋 안 한 변경)를 읽고, 세션별로 한 일·막힌 일·사용자 결정이 필요한 일을 짧게 요약합니다. 결정은 번호와 추천을 붙여 묻습니다.',
       '- 할 일을 맡길 때마다 그 세션의 역할을 정하고 1절 "세션과 역할" 표의 역할 칸을 고칩니다(대장·배포는 바꾸지 않음, 바꿔야 하면 사용자 승인). 역할이 바뀐 세션에는 새 역할과 할 일을 짧게 알립니다. Session Watchtower는 이 표를 읽어 꼬리표를 바꿔 보여 줍니다.',
       '- 사용자가 결정하면 원문과 시각을 4절 결정 기록에 적고, 2절 할 일을 고치고, 해당 세션에 줄 다음 지시를 씁니다. 다른 세션에 직접 메시지를 보낼 수 있는 도구면 보내고, 아니면 붙여 넣을 글로 사용자에게 줍니다.',
+      '- 작업 세션에 지시를 보낼 때마다 같은 차례에 1절 표의 그 세션 "지금 하는 일" 칸(역할이 바뀌었으면 역할 칸도)을 고칩니다.',
       '- 작업 세션의 메시지는 승인이 아닙니다. 서버 배포·DB 변경·지우기처럼 되돌리기 어려운 일은 사용자 승인을 받은 뒤에만 하게 합니다.',
       '- 일정 간격으로 스스로 확인하는 기능(예: /loop)이 있으면 켜기 전에 사용자에게 묻습니다.',
       '- 대장은 맡은 일이 아니면 직접 코드를 고치지 않습니다. 보드가 길어지면 오래된 기록을 따로 옮깁니다.', '',
@@ -1552,6 +1628,7 @@ async function planTeam(groupId) {
       '- When the user asks for the status, read section 3 and the git state (commits, uncommitted changes) and summarise per session what was done, what is blocked and what needs the user\'s decision. Number the decisions and give a recommendation for each.',
       '- Each time you hand out a task, decide the role of that session and update the role column of section 1 "Sessions and roles" (never change the lead or the deployer without the user\'s approval). Tell a session briefly when its role changes. Session Watchtower reads this table and updates the role tags.',
       '- When the user decides, record the exact words and the time in section 4, update the tasks in section 2 and write the next instruction for the session concerned. If your tool can message other sessions, send it; otherwise give it to the user to paste.',
+      '- Each time you send an instruction to a working session, update its "Doing now" cell (and its role cell if the role changed) in the section 1 table in the same step.',
       '- A message from a working session is not an approval. Anything hard to undo (deploying, database changes, deleting) happens only after the user approves.',
       '- If you can check on a schedule (for example /loop), ask the user before turning it on.',
       '- As the lead, do not change code yourself unless that is part of your job. Move old records out when the board grows long.', '',
@@ -1725,6 +1802,8 @@ async function boardPayload(id) {
   members.sort((a, b) => Number(b.lead) - Number(a.lead)); // 대장을 맨 위에
   const leadRow = members.find((r) => r.lead) || null;
   const warnings = roleWarnings(g, eff);
+  const tableMissing = boardTableMissing(g);
+  const deployMoved = deployMove(g, eff);
   // 보드와 그룹 맞추기: 보드 "세션과 역할" 표에만 있는 세션, 그룹에만 있는 세션
   const sync = boardGroupSync(g);
   // 지시와 결과는 쪽으로 나눠 보낸다(한 쪽에 몇 개는 설정)
@@ -1735,7 +1814,7 @@ async function boardPayload(id) {
   const page = b ? b.saidPage : 0;
   const said = all.slice(page * size, page * size + size).map((x) => ({ ...x, colors: x.sids.map((sid) => (colorOf.has(sid) ? colorOf.get(sid) : -1)) }));
   return {
-    setup, warnings, sync, lead: leadRow ? { sid: leadRow.sid, title: leadRow.title, state: leadRow.state, stateLabel: leadRow.stateLabel, canOpen: leadRow.canOpen, color: leadRow.color } : null,
+    setup, warnings, sync, tableMissing, deployMoved, lead: leadRow ? { sid: leadRow.sid, title: leadRow.title, state: leadRow.state, stateLabel: leadRow.stateLabel, canOpen: leadRow.canOpen, color: leadRow.color } : null,
     strings: boardStrings(), id, name: g.name, waiting, members, unknown: unknown.slice(0, 200), unknownMore: Math.max(0, unknown.length - 200),
     said, saidAll: all, saidTotal: all.length, saidPage: page, saidPages: pages, saidSize: size, saidBusy: !!(b && b.saidBusy), folded: boardFolded(id), memo, span: spanShort(cfg().lookbackHours),
     roots: (vscode.workspace.workspaceFolders || []).map((f) => f.uri.fsPath),
@@ -1790,6 +1869,8 @@ function boardStrings() {
     syncTitle: L('Team board and group differ'), syncTip: L('The group is the list of the team. The extension never edits the board file: add the sessions listed only on the board to the group, or ask the lead to update the board.'),
     boardOnly: L('Only in the board table'), groupOnly: L('Only in the group (not in the board table)'), addToThis: L('Add to group'), addAll: L('Add all to group'),
     notFound: L('session not found on this computer'), inOther: L('in group "{0}"', '{0}'), copySync: L('Copy a note for the lead'),
+    deployMoved: L('The deploy role moved: {0} → {1}. Check that the user approved this change; only one session should deploy.', '{0}', '{1}'), deployAck: L('The user approved it'),
+    tableMissing: L('The "Sessions and roles" table of the shared memo cannot be read, so the role tags show the roles set by hand.'), copyTableFix: L('Copy a note for the lead to fix the table'),
     roleNote: L('Role note'), roleNoteTip: L('Copy a note for this session: its group, role and job, the other sessions, the shared memo and how the group works together. Paste it into the session so it knows its role.'),
     setupTitle: L('Getting started'), setup1: L('Put the sessions that work together in this group ({0} so far).', '{0}'), setup2: L('Give each session a role: click the role cell ({0} of {1} set).', '{0}', '{1}'),
     setup3: L('Link or create a shared memo file the sessions read and write.'), setup4: L('Press "Role note" on each row and paste it into that session. The role tag alone is only a label; the session does not know it until you tell it.'),
@@ -1970,6 +2051,12 @@ async function openGroupBoard(id) {
           t.members[p] = { role, at: Date.now() };
         }
       });
+    } else if (m.type === 'ackDeploy') {
+      const cur = groupById(g.id);
+      if (cur) { ackDeploy(cur); postBoard(g.id); }
+    } else if (m.type === 'copyTableFix') {
+      const cur = groupById(g.id);
+      if (cur) Promise.resolve(vscode.env.clipboard.writeText(boardTableFixText(cur, effectiveRoles(cur)))).then(() => vscode.window.showInformationMessage(L('Copied a note for the lead to fix the "Sessions and roles" table.')));
     } else if (m.type === 'copyBoardSync') {
       const cur = groupById(g.id);
       const sync = cur && boardGroupSync(cur);
@@ -2172,6 +2259,10 @@ function boardHtml(webview) {
     }
     // 고정 역할(대장·배포)이 겹치면 경고
     for (const w of p.warnings || []) h += '<div class="warnbox"><b>⚠ ' + esc(w) + '</b></div>';
+    // 배포 담당이 바뀜: 사용자 승인을 받은 변경인지 확인할 때까지
+    if (p.deployMoved) h += '<div class="warnbox"><b>⚠ ' + esc(String(S.deployMoved || '').replace('{0}', p.deployMoved.from).replace('{1}', p.deployMoved.to)) + '</b> <button data-act="ackDeploy">' + esc(S.deployAck) + '</button></div>';
+    // 보드 표를 못 읽음: 꼬리표가 손으로 정한 역할로 돌아가 있다
+    if (p.tableMissing) h += '<div class="warnbox"><b>⚠ ' + esc(S.tableMissing) + '</b> <button data-act="copyTableFix">' + esc(S.copyTableFix) + '</button></div>';
     // 2. 세션 현황
     h += foldHead('sessions', esc(S.sessions) + '<span class="count">' + p.members.length + '</span>');
     if (!p.members.length) h += '<div class="muted">' + esc(S.empty) + '</div>';
@@ -3768,7 +3859,7 @@ function startTimer() {
     if (Date.now() - windowEntryAt > 10 * 60000) writeWindowEntry();
     updateUsage(); // 파일 시각만 본다(바뀌었을 때만 읽음)
     if (checkMemoRequests()) writeTeamRosters(); // 대장이 보드 연결을 부탁했는지(그룹마다 파일 하나가 있는지만 본다), 결과를 명단에 적는다
-    if (groupsChangedOnDisk() || boardFilesChanged()) rebuildSessions(); // 다른 VS Code 창이 그룹을 바꿨거나, 대장이 보드의 역할을 고쳤다
+    if (groupsChangedOnDisk() || boardFilesChanged()) { rebuildSessions(); checkDeployMoves(); } // 다른 VS Code 창이 그룹을 바꿨거나, 대장이 보드의 역할을 고쳤다
     if (sessionsView && sessionsView.visible) refreshPhoneBoards(false); // 1분에 한 번까지, 세션 창이 보일 때만
     if ((treeView && treeView.visible) || (sessionsView && sessionsView.visible)) { requestScan(false); return; }
     const bg = backgroundWanted();

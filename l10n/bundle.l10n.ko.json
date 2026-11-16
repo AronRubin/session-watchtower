@@ -446,5 +446,12 @@
   "New Claude Code session (setting newSessionTool chooses Claude Code or Codex)": "새 Claude Code 세션 (설정 newSessionTool에서 Claude Code·Codex를 고릅니다)",
   "Stop warning for these {0} file(s)": "이 파일 {0}개 모두 경고 안 함",
   "Files that another session also changed": "다른 세션도 고친 파일",
-  "No overlap warning for {0} file(s) any more. \"Warn about overlapping edits for every file again\" turns them back on.": "파일 {0}개는 이제 겹침 경고를 하지 않습니다. 다시 켜려면 명령 \"모든 파일에 겹침 경고 다시 켜기\"를 쓰세요."
+  "No overlap warning for {0} file(s) any more. \"Warn about overlapping edits for every file again\" turns them back on.": "파일 {0}개는 이제 겹침 경고를 하지 않습니다. 다시 켜려면 명령 \"모든 파일에 겹침 경고 다시 켜기\"를 쓰세요.",
+  "(no one)": "(없음)",
+  "The user approved it": "사용자가 승인함",
+  "Group \"{0}\": the deploy role moved from {1} to {2}. Check that the user approved this change; only one session should deploy.": "\"{0}\" 그룹: 배포 담당이 {1}에서 {2}(으)로 바뀌었습니다. 사용자가 승인한 변경인지 확인하세요. 배포는 한 세션만 맡아야 합니다.",
+  "The deploy role moved: {0} → {1}. Check that the user approved this change; only one session should deploy.": "배포 담당이 바뀜: {0} → {1}. 사용자가 승인한 변경인지 확인하세요. 배포는 한 세션만 맡아야 합니다.",
+  "The \"Sessions and roles\" table of the shared memo cannot be read, so the role tags show the roles set by hand.": "공유 메모의 \"세션과 역할\" 표를 읽지 못해서 꼬리표가 손으로 정한 역할로 보입니다.",
+  "Copy a note for the lead to fix the table": "대장에게 줄 표 고치기 글 복사",
+  "Copied a note for the lead to fix the \"Sessions and roles\" table.": "대장에게 줄 \"세션과 역할\" 표 고치기 글을 복사했습니다."
 }

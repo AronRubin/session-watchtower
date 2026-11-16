@@ -46,6 +46,12 @@ exports.activate = async () => {
     await run('notifications.clearAll');
     return;
   }
+  if (scene === 'codexnew') {
+    // what "New session" opens when newSessionTool is codex: the Codex extension's "New Codex Agent" (see shoot.sh, CODEX_EXT)
+    await sleep(9000);
+    try { await run('chatgpt.newCodexPanel'); } catch (e) { vscode.window.showErrorMessage('chatgpt.newCodexPanel failed: ' + (e && e.message)); }
+    return;
+  }
   if (scene === 'builtin') {
     // the built-in phone board: turned on in settings (see shoot.sh), then the link panel made by the extension itself
     await sleep(9000);
