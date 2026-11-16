@@ -238,23 +238,32 @@ const ASK_REQ_RE = /(주세요|주십시오|주시겠어요|바랍니다|부탁�
 const ASK_OFFER_RE = /(하시면|주시면|라고만?\s*(하시면|보내|답해)).{0,60}(하겠습니다|드리겠습니다|시작합니다|진행합니다|하겠어요|드릴게요|할게요)/;
 // 특정한 결정 없이 "더 시킬 일 있으면 말해 달라"는 인사말은 내 차례로 보지 않는다
 const GENERIC_RE = /(맡길\s*일이?\s*있으면|원하시면|필요하시면|진행할\s*작업을|다른\s*작업이?\s*있으면|새\s*작업을\s*맡기)/;
+// 영어로 쓰는 세션: 위와 같은 뜻의 영어 표현(한국어 규칙은 그대로 두고 더한다). 물음표로 끝나는 질문은 ASK_END_RE가 이미 잡는다
+const NONE_EN_RE = /\b(nothing (else |more |left )?(for you )?to do|nothing (is )?(needed|required) from you|no (further )?action (is )?(needed|required))\b/i;
+const ASK_REQ_EN_RE = /\b(please (confirm|choose|pick|decide|approve|review|reply|answer|check|run|press|enter|type|select|tell me|let me know)|let me know (which|whether|what|how|when)|wait(ing)? for your (answer|reply|decision|approval|confirmation|go-ahead)|needs? your (approval|decision|confirmation|input|go-ahead|answer)|you('ll| will)? need to)\b/i;
+const ASK_OFFER_EN_RE = /(\b(if|once) you (approve|confirm|agree|say|reply)\b|\b(say|reply|type) ["“'][^"”']{1,30}["”']).{0,80}\bI('ll| will| can)\b/i;
+const GENERIC_EN_RE = /\b(let me know if (you need|there('s| is)|you have|you'd like|you want) (anything|something|more|other)|anything else\b|feel free to)/i;
+const asksReq = (l) => ASK_REQ_RE.test(l) || ASK_REQ_EN_RE.test(l);
+const asksOffer = (l) => ASK_OFFER_RE.test(l) || ASK_OFFER_EN_RE.test(l);
+const generic = (l) => GENERIC_RE.test(l) || GENERIC_EN_RE.test(l);
 
 function tidyLine(s) {
   return String(s || '').replace(/^\s*(#{1,6}\s+|[-*+]\s+|>\s*|\d+[.)]\s+)/, '').replace(/\*\*|__|`/g, '').replace(/\s+/g, ' ').trim();
 }
 
 function lineAsks(l) {
-  const asks = ASK_END_RE.test(l) || ASK_MID_RE.test(l) || ASK_REQ_RE.test(l) || ASK_OFFER_RE.test(l);
+  const asks = ASK_END_RE.test(l) || ASK_MID_RE.test(l) || asksReq(l) || asksOffer(l);
   if (!asks) return false;
   // 인사말만 있는 줄은 빼되, 같은 줄에 구체적인 제안("~라고 하시면 ~하겠습니다")이 있으면 묻는 줄로 본다
-  return !GENERIC_RE.test(l) || ASK_OFFER_RE.test(l.replace(GENERIC_RE, ''));
+  return !generic(l) || asksOffer(l.replace(GENERIC_RE, '').replace(GENERIC_EN_RE, ''));
 }
 
 function classifyTurn(text) {
   const lines = String(text || '').split('\n').map(tidyLine).filter((l) => l && !/^\|?[-:| ]+\|?$/.test(l));
   if (!lines.length) return null;
   const tail = lines.slice(-2);
-  if (NONE_RE.test(tail.join(' ')) && !ASK_REQ_RE.test(tail[tail.length - 1])) return 'none';
+  const t2 = tail.join(' ');
+  if ((NONE_RE.test(t2) || NONE_EN_RE.test(t2)) && !asksReq(tail[tail.length - 1])) return 'none';
   return tail.some(lineAsks) ? 'ask' : null;
 }
 

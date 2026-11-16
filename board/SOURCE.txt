@@ -1,4 +1,4 @@
-session-board e36f672500876facc61d907d945b92e4aaa2056d
+session-board be753fd26fb3c10cd29427b87e9a7235d529faa3
 Copied by tools/sync-board.sh: lib/ (without scan-worker.js) and public/. Do not edit these files here.
 
 85093e6b1f1cd349d8a7890fb5e33974c8a507d7ae1a6fb2882318b75ee034f4  lib/auth.js
@@ -10,7 +10,7 @@ Copied by tools/sync-board.sh: lib/ (without scan-worker.js) and public/. Do not
 4f966b007daf653a4dd8bb80add0960c22844433c8c424e71b84e984f470af44  lib/i18n.js
 60655422e5e4aeec11da5e6b5f3ef748397294518b9d653bfb7de95c5d8b759f  lib/push.js
 a7596e063329e0566fff2b7cd3721491ec8955428216ccadd71b5f464f049edd  lib/remotes.js
-4d56d7579afbd04cfbdf3fff346cc132dfb516f3027b4f6833403bbed1e99c72  lib/transcript.js
+980fd37d923bda1e3e0d40d41cc0c0a7fbe95a6f794606543857b1ff6bed5876  lib/transcript.js
 940561a24b99eccca41d02cbd0ef4b3d14795bc48eb8ca1b6aebd81f84bf4fa5  public/app.css
 d8b38c5afd8f47e2216b9f48ba9cf14aed224c81577fde24ca29d42b2b4f4c31  public/app.js
 b374b7fae2524d1c0a4c5300f85a899d654bbf7a0b3576854b6f9f843ea6064f  public/badge-96.png

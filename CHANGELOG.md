@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.32.3
+
+- The phone board also notices when a session that writes in English is waiting for your decision (it already did for Korean). Copied from session-board be753fd; on 46 recent sessions no Korean verdict changed.
+- Tests stop a single test after 3 minutes instead of waiting forever (one full run hung once in the built-in board test and could not be reproduced in 4 later runs).
+
 ## 0.32.2
 
 - **The phone link is https only when Tailscale serve really points at the board.** Before, having Tailscale installed was enough for the panel to make an https link and say "This computer is ready", even when `tailscale serve` was not set up yet, or pointed at another port (such as a separately installed board), so the phone could not open the link or reached the wrong board. Now Watchtower checks `tailscale serve status`; if the board's port is not served, the panel says it is not ready yet and shows the `tailscale serve` command, and the computer button opens the board through VS Code instead.
