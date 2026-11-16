@@ -77,32 +77,61 @@ function pair(folder, timeoutMs = PAIR_MS) {
   });
 }
 
-// 보드를 휴대폰·다른 컴퓨터에서 여는 주소. 보드의 `cli.js pair`와 같은 방법: 이 컴퓨터의 Tailscale 이름(https://<이름>).
-// port를 주면 `tailscale serve`가 그 이름의 맨 위(/)를 이 컴퓨터의 그 포트로 실제로 넘기고 있을 때만 그 주소를 준다.
-// (Tailscale만 깔고 serve를 아직 안 했거나, serve가 다른 포트 — 예: 따로 설치한 보드 — 를 가리키면 그 링크는 열리지 않거나
-//  엉뚱한 보드로 간다. 그때는 null을 돌려 패널이 "아직 준비 안 됨"과 serve 명령을 보여 주게 한다)
-// Tailscale이 없으면 null(그때는 이 컴퓨터의 127.0.0.1 주소를 쓴다)
+// tailscale 명령 찾기: 먼저 PATH의 tailscale, 없으면(ENOENT) 흔한 설치 자리.
+// Windows는 Tailscale을 설치해도 이미 켜 둔 VS Code의 PATH에는 들어가지 않아서, 예전에는 VS Code를 모두 껐다 켜야 했다(11-16 사용자)
+function tailscaleCandidates(platform = process.platform, env = process.env) {
+  if (platform === 'win32') return [env.ProgramFiles && path.join(env.ProgramFiles, 'Tailscale', 'tailscale.exe'), 'C:\\Program Files\\Tailscale\\tailscale.exe', env['ProgramFiles(x86)'] && path.join(env['ProgramFiles(x86)'], 'Tailscale', 'tailscale.exe')].filter(Boolean);
+  if (platform === 'darwin') return ['/Applications/Tailscale.app/Contents/MacOS/Tailscale', '/opt/homebrew/bin/tailscale', '/usr/local/bin/tailscale'];
+  return ['/usr/bin/tailscale', '/usr/local/bin/tailscale', '/usr/sbin/tailscale'];
+}
+function runTailscale(args, timeoutMs, bin) {
+  const one = (b) => new Promise((resolve) => {
+    execFile(b, args, { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, windowsHide: true }, (err, out) => resolve({ err, out, bin: b }));
+  });
+  if (bin) return one(bin);
+  return one('tailscale').then((r) => {
+    if (!r.err || r.err.code !== 'ENOENT') return r;
+    const alt = tailscaleCandidates().find((p) => { try { return fs.existsSync(p); } catch { return false; } });
+    return alt ? one(alt) : r;
+  });
+}
+
+// 휴대폰이 이 보드에 닿을 수 있는지 단계별로: { installed, bin, dns, served, base }.
+// installed: tailscale 명령이 있음, dns: 로그인해서 이 컴퓨터의 Tailscale 이름이 있음,
+// served: `tailscale serve`가 그 이름의 맨 위(/)를 이 컴퓨터의 그 포트로 넘김(그때만 base = https 주소).
+// 보드 `cli.js pair`와 같은 이름을 쓰되, serve까지 확인해 휴대폰에서 안 열리는 링크를 "준비됨"이라 하지 않는다
+async function tailscaleState(port, timeoutMs = 3000) {
+  const st = await runTailscale(['status', '--json'], timeoutMs);
+  if (st.err && st.err.code === 'ENOENT') return { installed: false, bin: null, dns: '', served: false, base: null };
+  let dns = '';
+  try { dns = String((JSON.parse(st.out || '{}').Self || {}).DNSName || '').replace(/\.$/, ''); } catch { dns = ''; }
+  if (!/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/.test(dns)) return { installed: true, bin: st.bin, dns: '', served: false, base: null };
+  if (!port) return { installed: true, bin: st.bin, dns, served: false, base: 'https://' + dns };
+  const sv = await runTailscale(['serve', 'status', '--json'], timeoutMs, st.bin);
+  let web = {};
+  try { web = (JSON.parse((!sv.err && sv.out) || '{}') || {}).Web || {}; } catch { web = {}; }
+  const want = new RegExp(`^https?://(127\\.0\\.0\\.1|localhost):${Number(port)}/?$`);
+  for (const [hostPort, w] of Object.entries(web)) {
+    const [host, p] = String(hostPort).split(':');
+    const h = w && w.Handlers && w.Handlers['/'];
+    if (host.toLowerCase() === dns.toLowerCase() && h && typeof h.Proxy === 'string' && want.test(h.Proxy)) {
+      return { installed: true, bin: st.bin, dns, served: true, base: 'https://' + dns + (p && p !== '443' ? ':' + p : '') };
+    }
+  }
+  return { installed: true, bin: st.bin, dns, served: false, base: null };
+}
+
+// 보드를 휴대폰·다른 컴퓨터에서 여는 주소(위 확인을 모두 통과했을 때만), 아니면 null
 function publicBase(port, timeoutMs = 3000) {
-  const run = (args) => new Promise((resolve) => {
-    execFile('tailscale', args, { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, windowsHide: true }, (err, out) => resolve(err ? null : out));
-  });
-  return run(['status', '--json']).then((out) => {
-    let dns = '';
-    try { dns = String((JSON.parse(out || '{}').Self || {}).DNSName || '').replace(/\.$/, ''); } catch { return null; }
-    if (!/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/.test(dns)) return null;
-    if (!port) return 'https://' + dns;
-    return run(['serve', 'status', '--json']).then((sv) => {
-      let web = {};
-      try { web = (JSON.parse(sv || '{}') || {}).Web || {}; } catch { return null; }
-      const want = new RegExp(`^https?://(127\\.0\\.0\\.1|localhost):${Number(port)}/?$`);
-      for (const [hostPort, w] of Object.entries(web)) {
-        const [host, p] = String(hostPort).split(':');
-        const h = w && w.Handlers && w.Handlers['/'];
-        if (host.toLowerCase() === dns.toLowerCase() && h && typeof h.Proxy === 'string' && want.test(h.Proxy)) return 'https://' + dns + (p && p !== '443' ? ':' + p : '');
-      }
-      return null;
-    });
-  });
+  return tailscaleState(port, timeoutMs).then((s) => s.base);
+}
+
+// 이 컴퓨터에서 serve를 켜는 명령(운영체제·찾은 tailscale 자리에 맞춰). Windows는 PowerShell용
+function serveCommand(port, bin, platform = process.platform) {
+  const p = Number(port);
+  if (platform === 'win32') return bin && /[\\/]/.test(bin) ? `& "${bin}" serve --bg ${p}` : `tailscale serve --bg ${p}`;
+  if (platform === 'darwin') return `${bin && /[\\/]/.test(bin) ? `"${bin}"` : 'tailscale'} serve --bg ${p}`;
+  return `sudo tailscale serve --bg ${p}`;
 }
 
 // QR(오류 정정 M)을 SVG로. 흰 바탕에 검은 칸이라 어두운 테마에서도 휴대폰이 읽는다
@@ -120,4 +149,4 @@ function qrSvg(text, cell = 6) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
 }
 
-module.exports = { probe, findBoards, localRun, boardFolder, parsePair, pair, publicBase, qrSvg };
+module.exports = { probe, findBoards, localRun, boardFolder, parsePair, pair, publicBase, tailscaleState, tailscaleCandidates, serveCommand, qrSvg };

@@ -56,6 +56,15 @@ test('바깥 주소: Tailscale 이름이면 https 주소, 이상한 이름·Tail
   setTailscale(tsOk);
 });
 
+test('serve 명령과 tailscale 찾는 자리: 운영체제마다(Windows는 PATH에 없어도 설치 자리, PowerShell 명령)', () => {
+  assert.strictEqual(pb.serveCommand(5290, 'C:\\Program Files\\Tailscale\\tailscale.exe', 'win32'), '& "C:\\Program Files\\Tailscale\\tailscale.exe" serve --bg 5290');
+  assert.strictEqual(pb.serveCommand(5290, 'tailscale', 'win32'), 'tailscale serve --bg 5290');
+  assert.strictEqual(pb.serveCommand(5291, 'tailscale', 'linux'), 'sudo tailscale serve --bg 5291');
+  assert.strictEqual(pb.serveCommand(5290, '/Applications/Tailscale.app/Contents/MacOS/Tailscale', 'darwin'), '"/Applications/Tailscale.app/Contents/MacOS/Tailscale" serve --bg 5290');
+  assert.ok(pb.tailscaleCandidates('win32', { ProgramFiles: 'D:\\Apps' }).some((p) => /Tailscale[\\/]tailscale\.exe$/.test(p) && p.startsWith('D:')), 'Windows 설치 자리');
+  assert.ok(pb.tailscaleCandidates('darwin', {}).includes('/Applications/Tailscale.app/Contents/MacOS/Tailscale'));
+});
+
 let servers = [];
 let extRef = null;
 test.after(() => { for (const s of servers) s.close(); if (extRef) { try { extRef.deactivate(); } catch { /* 이미 꺼짐 */ } } });
@@ -111,6 +120,7 @@ test('확장: 보드가 켜져 있으면 세션 창에 단추, 누르면 QR·코
   assert.match(web.lastPayload().phone, /^Phone board is running\./);
   assert.ok(!/95번 서버|85번 PC/.test(web.lastPayload().phone), '단추 설명에 컴퓨터 이름을 넣지 않는다');
   assert.match(web.view.webview.html, /id="btnPhone" hidden/);
+  process.env.FAKE_SERVE_PORT = String(a.address().port); // Tailscale serve가 이 보드 포트를 넘기고 있다(준비됨)
   web.send({ type: 'phone' });
   const until2 = Date.now() + 9000;
   while (Date.now() < until2 && !(stub.state.panels || []).some((p) => p.viewType === 'claudeSessionChanges.phone')) await sleep(50);
@@ -142,9 +152,18 @@ test('확장: 보드가 켜져 있으면 세션 창에 단추, 누르면 QR·코
   fs.writeFileSync(cliFile, "if (process.argv[2] === 'pair') { console.log('http://127.0.0.1:5290/pair?c=ZZ99YY88'); console.log('코드: ZZ99YY88  (설명)'); }\n");
   panel.send({ type: 'again' });
   const until4 = Date.now() + 9000;
-  while (Date.now() < until4 && !/ZZ99YY88/.test(panel.webview.html)) await sleep(50);
+  while (Date.now() < until4 && !/The QR code for the phone appears after step 3/.test(panel.webview.html)) await sleep(50);
   assert.match(panel.webview.html, /Not ready yet: the link below only opens on this computer\./);
   assert.ok(!/<details class="pc">/.test(panel.webview.html), '준비 안 됐으면 접지 않는다');
+  assert.strictEqual((panel.webview.html.match(/<svg /g) || []).length, 1, '휴대폰에서 안 열리는 링크의 QR은 보여 주지 않는다(Tailscale 앱 QR만)');
+  assert.ok(!panel.webview.html.includes('ZZ99YY88'), '코드도 보여 주지 않는다');
+  assert.match(panel.webview.html, /\(http:\/\/127\.0\.0\.1:5290 only opens on this computer\)/);
+  assert.match(panel.webview.html, /turn on &quot;HTTPS certificates&quot; and leave &quot;Tailscale Funnel&quot; off/, '처음 serve의 HTTPS 켜기와 Funnel 끄기');
+  stub.calls.length = 0;
+  panel.send({ type: 'runServe' });
+  await sleep(20);
+  const term = stub.calls.find((c) => c[0] === 'terminal');
+  assert.ok(term && /^(sudo )?tailscale serve --bg \d+$/.test(term[1].sent[0]), 'serve 명령을 터미널에서 돌린다(확장이 만든 명령만)');
   fs.writeFileSync(cliFile, okCli);
   panel.send({ type: 'again' });
   const until5 = Date.now() + 9000;

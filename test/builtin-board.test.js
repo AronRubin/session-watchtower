@@ -66,11 +66,17 @@ test('꺼져 있으면 켤지 묻고, 켜면 이 창이 보드를 맡아 휴대�
   at('healthz after on');
   const hz = await get(port, '/healthz');
   assert.deepStrictEqual([hz.status, decodeURIComponent(hz.headers['x-session-board-label'])], [200, 'Test PC']);
-  const html = await until(() => { const p = (stub.state.panels || []).find((x) => x.viewType === 'claudeSessionChanges.phone'); return p && /\/pair\?c=/.test(p.webview.html) && p.webview.html; }, 'QR 패널');
-  const m = /http:\/\/127\.0\.0\.1:(\d+)\/pair\?c=([A-Z0-9]{10})/.exec(html);
-  assert.ok(m, 'Tailscale이 없으면 이 컴퓨터 주소로 링크를 만든다');
-  assert.strictEqual(Number(m[1]), port);
+  const html = await until(() => { const p = (stub.state.panels || []).find((x) => x.viewType === 'claudeSessionChanges.phone'); return p && /The QR code for the phone appears after step 3/.test(p.webview.html) && p.webview.html; }, 'QR 패널');
+  assert.ok(html.includes('(http://127.0.0.1:' + port + ' only opens on this computer)'), 'Tailscale이 준비 안 됐으면 이 컴퓨터 주소, 휴대폰 QR은 숨김');
   assert.match(html, /Not ready yet: the link below only opens on this computer\./, '휴대폰에서 열리려면 Tailscale이 필요하다고 보여 준다');
+  assert.match(html, /<li class="now">Sign in with the same account as on the phone/, 'Tailscale 로그인이 지금 할 일');
+  // 이 컴퓨터 브라우저로 열기: 그 코드로 실제 보드에 연결된다
+  const panelObj = (stub.state.panels || []).find((x) => x.viewType === 'claudeSessionChanges.phone');
+  stub.calls.length = 0;
+  panelObj.send({ type: 'openBoard' });
+  const opened = await until(() => stub.calls.find((c) => c[0] === 'openExternal'), '브라우저로 열기');
+  const m = /http:\/\/127\.0\.0\.1:(\d+)\/pair\?c=([A-Z0-9]{10})/.exec(opened[1]);
+  assert.ok(m && Number(m[1]) === port, '이 컴퓨터 주소와 코드');
   at('pair request');
   const paired = await get(port, '/pair?c=' + m[2]);
   assert.strictEqual(paired.status, 302, '패널의 코드로 실제 보드에 연결된다');

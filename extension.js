@@ -4142,7 +4142,7 @@ async function phoneBoardPair() {
     const more = L('How it works');
     const b = await vscode.window.showWarningMessage(L('No phone board is running on this computer (checked port {0}). Start the board first.', (phoneboard.localRun() ? [phoneboard.localRun().port] : cfg().phoneBoardPorts).join(', '))
       + ' ' + L('The phone board is a separate program (session-board) that shows these sessions, their changed files and conversations in your phone\'s browser; this extension only finds it and makes the link.'), more);
-    if (b === more) vscode.commands.executeCommand('extension.open', ctx.extension.id);
+    if (b === more) vscode.env.openExternal(vscode.Uri.parse(README_PHONE));
     return;
   }
   const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: L('Making a link for your phone…') }, () => phoneboard.pair(folder));
@@ -4150,6 +4150,9 @@ async function phoneBoardPair() {
     vscode.window.showWarningMessage(r.err === 'timeout' ? L('The phone board did not answer in time. Try again.') : L('Could not make a link. Run "node cli.js pair" in {0} to see why.', folder));
     return;
   }
+  const port = (boards.find((x) => x.local) || boards[0]).port;
+  r.ts = await phoneboard.tailscaleState(port);
+  if (!r.ts.served) r.local = true;
   showPhonePanel(r, boards, folder);
 }
 
@@ -4188,7 +4191,7 @@ async function offerBoardOn() {
   const on = L('Turn on');
   const more = L('How it works');
   const b = await vscode.window.showInformationMessage(L('The phone board is off. Turn it on? It shows these sessions, their changed files and conversations in your phone\'s browser, read-only. It opens only on this computer; your phone reaches it through your own Tailscale.'), on, more);
-  if (b === more) { vscode.commands.executeCommand('extension.open', ctx.extension.id); return undefined; }
+  if (b === more) { vscode.env.openExternal(vscode.Uri.parse(README_PHONE)); return undefined; }
   if (b !== on) return undefined;
   await vscode.workspace.getConfiguration(CFG).update('phoneBoard.enabled', true, vscode.ConfigurationTarget.Global);
   const st = await syncBuiltInBoard(true);
@@ -4236,10 +4239,10 @@ async function pairBuiltIn(run) {
   const boards = await refreshPhoneBoards(true);
   let made;
   try { made = boardhost.pairCode(builtInDir()); } catch (e) { vscode.window.showWarningMessage(L('Could not make a link: {0}', String((e && e.message) || e))); return undefined; }
-  const ts = await phoneboard.publicBase(run.port);
-  const base = ts || `http://127.0.0.1:${run.port}`;
+  const ts = await phoneboard.tailscaleState(run.port);
+  const base = ts.base || `http://127.0.0.1:${run.port}`;
   const t = new Date(made.exp);
-  const r = { ok: true, url: base + '/pair?c=' + made.code, code: made.code, until: `${t.getHours()}:${pad2(t.getMinutes())}:${pad2(t.getSeconds())}`, local: !ts };
+  const r = { ok: true, url: base + '/pair?c=' + made.code, code: made.code, until: `${t.getHours()}:${pad2(t.getMinutes())}:${pad2(t.getSeconds())}`, local: !ts.base, ts };
   showPhonePanel(r, boards.length ? boards : [{ port: run.port, label: run.label, local: true }], null);
   return undefined;
 }
@@ -4277,6 +4280,8 @@ async function phoneBoardOpen() {
   return vscode.env.openExternal(vscode.Uri.parse(base + '/pair?c=' + encodeURIComponent(r.code)));
 }
 
+// 휴대폰 보드 설치 안내(README의 휴대폰 보드 절). 확장 정보 화면은 판·설치 방식에 따라 안 열리는 일이 있어 브라우저로 연다
+const README_PHONE = 'https://github.com/myoungsuk/session-watchtower#phone-board';
 // Tailscale 받는 곳(공식 주소). 휴대폰은 QR로, 컴퓨터는 링크로
 const TS_LINKS = {
   phone: 'https://tailscale.com/download',
@@ -4306,7 +4311,17 @@ function showPhonePanel(r, boards, folder) {
         phonePanel.secret = null;
         phonePanel.webview.html = phoneHtml(phonePanel.webview, { ...r0, used: true }, phonePanel.last.boards, phonePanel.last.folder, phonePanel.last.media);
       }
-      else if (m.type === 'link' && Object.values(TS_LINKS).includes(m.url)) vscode.env.openExternal(vscode.Uri.parse(m.url));
+      else if (m.type === 'link' && (Object.values(TS_LINKS).includes(m.url) || m.url === README_PHONE)) vscode.env.openExternal(vscode.Uri.parse(m.url));
+      else if (m.type === 'runServe' && phonePanel.last) {
+        // serve 명령을 이 컴퓨터(원격 창이면 그 서버)의 터미널에서 돌린다. 처음 한 번은 Tailscale이 HTTPS를 켜는 주소를 보여 준다.
+        // 명령은 웹뷰가 보낸 글이 아니라 확장이 만든 것만 쓴다
+        const lr = phonePanel.last.r;
+        const bd = phonePanel.board || {};
+        const cmdText = phoneboard.serveCommand(bd.port || 5290, lr.ts && lr.ts.bin);
+        const term = vscode.window.createTerminal(process.platform === 'win32' ? { name: 'Tailscale serve', shellPath: 'powershell.exe' } : { name: 'Tailscale serve' });
+        term.show();
+        term.sendText(cmdText, true);
+      }
       else if (m.type === 'again') phoneBoardPair();
     });
   }
@@ -4329,12 +4344,18 @@ function phoneHtml(webview, r, boards, folder, media) {
   const link = (key, label) => `<a href="${esc(TS_LINKS[key])}" data-link="${esc(TS_LINKS[key])}">${esc(label)}</a>`;
   const cmd = (text) => `<code>${esc(text)}</code> <button class="mini" data-cmd="${esc(text)}">${esc(L('Copy'))}</button>`;
   const ready = !r.local;
-  // ③ 이 컴퓨터: 링크가 이미 사설망 주소(https)면 준비된 것이라 접어 두고, 아니면 펼쳐서 보여 준다
+  // ③ 이 컴퓨터: 어디까지 됐는지(설치 → 로그인 → serve) 확인한 결과로 지금 할 일을 앞에 둔다. 다 됐으면 접어 둔다
+  const ts = r.ts || {};
+  const serveText = phoneboard.serveCommand(port, ts.bin);
+  const at = !ts.installed ? 'install' : !ts.dns ? 'login' : !ts.served ? 'serve' : 'done';
+  const mark = (step) => (at === step ? ' class="now"' : '');
+  const doneMark = (step) => (['install', 'login', 'serve'].indexOf(at) > ['install', 'login', 'serve'].indexOf(step) || at === 'done' ? ' ✓' : '');
   const pcSteps = `<ul class="sub">
-      <li>${esc(L('Install Tailscale on this computer:'))} ${link('windows', 'Windows')} · ${link('mac', 'Mac')} · ${link('linux', 'Linux')}</li>
-      <li>${esc(L('Sign in with the same account as on the phone.'))} ${esc(L('On Linux:'))} ${cmd('sudo tailscale up')}</li>
-      <li>${esc(L('Let the phone reach the board through Tailscale:'))} ${cmd('tailscale serve --bg ' + port)} <span class="muted">${esc(L('(on Linux with sudo)'))}</span></li>
-      <li>${esc(L('Then press "Make a new link" below; the link should now start with https.'))}</li>
+      <li${mark('install')}>${esc(L('Install Tailscale on this computer:'))} ${link('windows', 'Windows')} · ${link('mac', 'Mac')} · ${link('linux', 'Linux')}${doneMark('install')}</li>
+      <li${mark('login')}>${esc(L('Sign in with the same account as on the phone: on Windows and Mac with the Tailscale icon in the taskbar or menu bar → Log in; on Linux:'))} ${cmd('sudo tailscale up')}${doneMark('login')}</li>
+      <li${mark('serve')}>${esc(L('Let the phone reach the board:'))} ${cmd(serveText)} <button class="mini" data-act="runServe">${esc(L('Run it in a terminal'))}</button>${doneMark('serve')}
+        <div class="muted">${esc(L('The first time, the command shows a login.tailscale.com address. Open it, turn on "HTTPS certificates" and leave "Tailscale Funnel" off (Funnel would put the board on the internet), then run the command again.'))}</div></li>
+      <li>${esc(L('Then press "Make a new link" below. No need to restart VS Code; the link should now start with https.'))}</li>
     </ul>`;
   return `<!DOCTYPE html>
 <html lang="${isKo() ? 'ko' : 'en'}"><head><meta charset="UTF-8">
@@ -4361,6 +4382,8 @@ function phoneHtml(webview, r, boards, folder, media) {
   .qr.small svg { width: 110px; height: 110px; }
   .qr.big svg { width: 230px; height: 230px; }
   .qr.used { opacity: 0.25; }
+  ul.sub li.now { font-weight: 600; }
+  ul.sub li.now::marker { color: var(--vscode-editorWarning-foreground, #cca700); }
   a { color: var(--vscode-textLink-foreground); }
   code { font-family: var(--vscode-editor-font-family); font-size: 12.5px; padding: 1px 5px; border-radius: 3px; background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.15)); }
   details.pc summary { cursor: pointer; color: var(--vscode-charts-green); }
@@ -4374,7 +4397,7 @@ function phoneHtml(webview, r, boards, folder, media) {
   .warn { margin-top: 12px; padding: 8px 12px; border-left: 3px solid var(--vscode-editorWarning-foreground, #cca700); background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 9%, transparent); }
 </style></head><body>
 <h1>${esc(L('Phone board: see these sessions on your phone'))}</h1>
-<div class="muted">${esc(L('Which session is working or waiting for you, what each changed, and the conversation, in your phone\'s browser. It only shows; to answer, use Claude Code (or its Remote Control).'))}</div>
+<div class="muted">${esc(L('Which session is working or waiting for you, what each changed, and the conversation, in your phone\'s browser. It only shows; to answer, use Claude Code (or its Remote Control).'))} <a href="${esc(README_PHONE)}" data-link="${esc(README_PHONE)}">${esc(L('Full setup guide'))}</a></div>
 <div class="top">
   ${img('phone-board-demo-dark.png') ? `<div><div class="demo"><img class="dk" src="${esc(img('phone-board-demo-dark.png'))}" alt="${esc(L('Example of the phone board'))}"><img class="lt" src="${esc(img('phone-board-demo-light.png'))}" alt="${esc(L('Example of the phone board'))}"></div><div class="caption muted">${esc(L('Example (made-up sessions)'))}</div></div>` : ''}
   <div class="steps">
@@ -4386,13 +4409,15 @@ function phoneHtml(webview, r, boards, folder, media) {
       <li><b>${esc(L('Sign in on the phone and turn the connection on'))}</b>${esc(L('Use the same account as this computer. When the phone asks to allow a VPN, allow it.'))}</li>
       <li><b>${esc(L('Prepare this computer'))}</b>
         ${ready ? `<details class="pc"><summary>${esc(L('This computer is ready ✓'))}</summary>${pcSteps}</details>` : `<div class="warn">${esc(L('Not ready yet: the link below only opens on this computer.'))}</div>${pcSteps}`}</li>
-      <li><b>${esc(L('Scan the board code below with the phone camera'))}</b>${esc(L('It opens in Chrome or Safari. Add it to the home screen to open it like an app. On an iPhone home-screen app, type only the code.'))}</li>
+      <li><b>${esc(L('Scan the board code below with the phone camera'))}</b>${esc(L('It opens in Chrome or Safari. Add it to the home screen to open it like an app. On an iPhone home-screen app, type only the code.'))}
+        <div class="muted">${esc(L('If the camera opens another app (for example a security app), copy the link and paste it into Chrome, Safari or Samsung Internet, or open the board address and type the 10-letter code.'))}</div></li>
       <li><b>${esc(L('(Optional) Get a buzz when a session waits for you'))}</b>${esc(L('At the bottom of the board on the phone: Notifications → Get them on this device.'))}</li>
     </ol>
   </div>
 </div>
 <h2>${esc(L('Board code for your phone'))}</h2>
-<div class="pair">
+${!ready ? `<div class="warn" style="margin:0 0 10px">${esc(L('The QR code for the phone appears after step 3: the phone cannot open this link yet ({0} only opens on this computer). Finish step 3, then press "Make a new link".', r.url.replace(/\/pair\?c=.*$/, '')))}</div>
+<div><button data-act="again">${esc(L('Make a new link'))}</button><button data-act="openBoard" title="${esc(L('Uses this code for the browser on this computer; the phone then needs a new link.'))}">${esc(L('Also open it in this computer\'s browser'))}</button></div>` : `<div class="pair">
   <div class="qr big${r.used ? ' used' : ''}">${qr(r.url, 6)}</div>
   <div>
     <div class="muted">${esc(L('Code'))}</div>
@@ -4402,7 +4427,7 @@ function phoneHtml(webview, r, boards, folder, media) {
       : `<button data-act="copyLink">${esc(L('Copy link'))}</button><button data-act="copyCode">${esc(L('Copy code'))}</button><button data-act="again">${esc(L('Make a new link'))}</button><button data-act="openBoard" title="${esc(L('Uses this code for the browser on this computer; the phone then needs a new link.'))}">${esc(L('Also open it in this computer\'s browser'))}</button>`}
     <div class="muted">${esc(r.until ? L('Works once, until {0}. A new link makes this one stop working. Do not send it to anyone else.', r.until) : L('Works once, within 10 minutes. A new link makes this one stop working. Do not send it to anyone else.'))}</div>
   </div>
-</div>
+</div>`}
 ${many ? `<div class="warn">${esc(L('More than one board answers on this computer. This link is for the board in the phone board folder (setting phoneBoard.folder).'))}</div>` : ''}
 <script nonce="${n}">
 (function () {

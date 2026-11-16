@@ -301,7 +301,33 @@ The phone board shows the sessions of this computer in your phone's browser: whi
 
 <img src="media/readme/phone-panel.png" width="620" alt="The phone board panel: an example of the board on a phone, the setup steps from installing Tailscale, and the QR code for the phone">
 
-**Turn it on** with *Phone board: turn on or off* (also in the Sessions view's `…` menu), or by running *Phone board: make a link for my phone*, which asks first. The board then opens on this computer at `127.0.0.1:5290` (setting `phoneBoard.port`), and a panel shows a QR code, a link and a short code for your phone, with the setup steps from scratch: install Tailscale on the phone, sign in with the same account, prepare this computer with `tailscale serve`, scan the code, and optionally turn on notifications. While the board runs, the Sessions view has a **phone button** (a new link) and a **computer button** (*Phone board: open it in this computer's browser*: the same board in this computer's browser; if it says the device is not connected yet, press **Connect this browser** in the notification).
+### Set it up (once, about 10 minutes)
+
+You need the free [Tailscale](https://tailscale.com/download) app on the phone and on this computer, signed in with the same account. Tailscale is a private network between your own devices; the board is never put on the internet.
+
+1. **Phone:** install Tailscale ([Google Play](https://play.google.com/store/apps/details?id=com.tailscale.ipn), [App Store](https://apps.apple.com/app/tailscale/id1470499037)), sign in, and allow the VPN when asked.
+2. **This computer:** install Tailscale ([Windows](https://tailscale.com/download/windows), [Mac](https://tailscale.com/download/mac), [Linux](https://tailscale.com/download/linux)) and sign in with the same account: on Windows and Mac with the Tailscale icon in the taskbar or menu bar → *Log in*; on Linux with `sudo tailscale up`. No need to restart VS Code afterwards.
+3. **Turn the board on:** run *Phone board: turn on or off* (also in the Sessions view's `…` menu) and press *Turn on*. The board opens on this computer only (`127.0.0.1:5290`, setting `phoneBoard.port`) and the phone panel opens. The panel checks each step and marks the one to do next.
+4. **Let the phone reach the board:** run the command the panel shows (or press *Run it in a terminal*):
+   - Windows (PowerShell): `& "C:\Program Files\Tailscale\tailscale.exe" serve --bg 5290`
+   - Mac: `tailscale serve --bg 5290`
+   - Linux: `sudo tailscale serve --bg 5290`
+
+   The first time, the command prints a `login.tailscale.com` address. Open it, turn on **HTTPS certificates**, leave **Tailscale Funnel** off (Funnel would put the board on the internet), save, and run the command again.
+5. **Connect the phone:** press *Make a new link* in the panel. The link now starts with `https://…ts.net` and a QR code appears. Scan it with the phone camera; it opens in Chrome or Safari. Add it to the home screen to open it like an app. The QR code works once, within 10 minutes.
+6. Optional: at the bottom of the board on the phone, *Notifications → Get them on this device*.
+
+To look at the same board on a computer, use the **computer button** next to the phone button in the Sessions view (or *Phone board: open it in this computer's browser*); if it says the device is not connected yet, press **Connect this browser** in the notification.
+
+### When it does not work
+
+| You see | Why | What to do |
+|---|---|---|
+| The panel says *Not ready yet* and shows no QR code for the phone | Tailscale is not installed, not signed in, or `tailscale serve` does not forward the board's port yet | Do the step the panel marks, then press *Make a new link* |
+| The phone opens `http://127.0.0.1:…` and gets a connection error | `127.0.0.1` is the phone itself | Finish step 4; the phone link must start with `https://` |
+| Scanning the QR code opens another app (for example a security app) | That app is the phone's default for links | Copy the link into Chrome, Safari or Samsung Internet, or open the board address and type the 10-letter code |
+| A browser shows *Connection needed* | That browser was never connected | Phone: make a new link. Computer: press *Connect this browser* |
+| The panel says the port shows a board from another computer | VS Code forwards ports from a remote window | Pick another port in `phoneBoard.port` and serve that port instead |
 
 What it protects:
 
@@ -443,7 +469,7 @@ Claude Code 세션을 여러 개 돌릴 때 **어느 세션이 일하는 중이�
 - **바깥에서 열기**: 데스크톱 알림 같은 다른 프로그램이 `vscode://kms-labs.session-watchtower/open?title=…` 주소로 그 세션의 대화를 열 수 있습니다.
 - **Codex** 세션도 함께 나옵니다.
 - **요금제 사용량**: 상태 표시줄 오른쪽에 Claude Code·Codex 한도를 몇 % 썼는지(예: `Claude 83% · Fable 21% · Codex 23%`) 보여 줍니다. Fable처럼 모델마다 따로 있는 주간 한도도 따로 나옵니다. 마우스를 올리면 칸별 값, 초기화 시각, 모델이 주간 한도의 몇 %까지 쓸 수 있는지, 이번 주 사용 비율, 몇 분 전 값인지가 나옵니다. Claude는 Claude Code가 `~/.claude.json`에 받아 둔 값이고, Claude를 쓰는 동안 15분마다 Claude Code 자신의 명령(`claude -p /usage`, 모델을 부르지 않음)으로 다시 확인하게 합니다. 누르면 바로 확인합니다. 확장은 로그인 정보를 읽지 않습니다. Codex는 마지막 Codex 기록의 값입니다. 세션 숫자도 사용량 바로 옆(오른쪽)에 있습니다. 인터넷에 묻지 않고, 두 파일의 크기·시각만 보다가 바뀌었을 때만 읽어서 CPU를 거의 쓰지 않습니다.
-- **휴대폰 보드(내장, 기본 꺼짐)**: "휴대폰 보드: 켜기·끄기"로 켜면 이 컴퓨터에만(127.0.0.1:5290) 보드가 열리고, 휴대폰으로 열 QR·링크·코드(10분, 한 번만)와 Tailscale 설정 순서를 보여 줍니다. 휴대폰은 각자의 Tailscale(`tailscale serve`)로 들어오고, 인터넷에 여는 Funnel은 쓰지 않습니다. 기기는 일회용 코드로만 연결되고 "연결된 휴대폰·브라우저 모두 끊기"로 한 번에 끊습니다. 창이 여러 개면 한 창만 보드를 맡고, 그 창이 닫히면 다른 창이 넘겨받습니다. 세션 창의 컴퓨터 단추는 같은 보드를 이 컴퓨터 브라우저로 엽니다. 따로 설치한 session-board가 이미 돌면 그것을 씁니다.
+- **휴대폰 보드(내장, 기본 꺼짐)**: "휴대폰 보드: 켜기·끄기"로 켜면 이 컴퓨터에만(127.0.0.1:5290) 보드가 열리고, 휴대폰으로 열 QR·링크·코드(10분, 한 번만)와 Tailscale 설정 순서를 보여 줍니다. 순서: ① 휴대폰과 이 컴퓨터에 Tailscale을 깔고 같은 계정으로 로그인 ② 켜기 ③ 패널의 serve 명령 실행("터미널에서 실행" 단추, Windows는 `& "C:\Program Files\Tailscale\tailscale.exe" serve --bg 5290`) — 처음 한 번은 나오는 login.tailscale.com 주소에서 HTTPS certificates를 켜고 Funnel은 끔 ④ "새 링크 만들기" → https 링크의 QR을 휴대폰으로 찍기. 준비가 안 됐으면 패널이 다음 할 일을 표시하고 휴대폰 QR은 숨깁니다. 휴대폰은 각자의 Tailscale(`tailscale serve`)로 들어오고, 인터넷에 여는 Funnel은 쓰지 않습니다. 기기는 일회용 코드로만 연결되고 "연결된 휴대폰·브라우저 모두 끊기"로 한 번에 끊습니다. 창이 여러 개면 한 창만 보드를 맡고, 그 창이 닫히면 다른 창이 넘겨받습니다. 세션 창의 컴퓨터 단추는 같은 보드를 이 컴퓨터 브라우저로 엽니다. 따로 설치한 session-board가 이미 돌면 그것을 씁니다.
 - **대장이 스스로 역할 나누기**: 그룹마다 팀 명단 파일(세션 이름·도구·상태·메시지 주소·역할·들어오고 빠진 기록)을 확장 저장소에 쓰고 그룹이 바뀔 때마다 새로 씁니다. 대장의 "역할 안내"에 명단 경로와 규칙(새 세션에 역할과 첫 지시, 빠진 세션의 일 나누기, 보드 표에 역할 적기, 메시지 주소로 직접 알리기)이 들어갑니다.
 - **보드 목차 접기**: 그룹 보드의 나를 기다리는 것·세션·지시와 결과·공유 메모 제목을 누르면 접히고, 그룹마다 기억합니다.
 - **MCP 서버 창**: 이 폴더에서 Claude Code가 쓰는 MCP 서버(직접 추가·이 폴더·프로젝트 `.mcp.json`·플러그인·claude.ai 커넥터)와 Codex 서버를 봅니다. "상태 확인"은 누를 때만 `claude mcp list`를 실행합니다(서버마다 한 번 붙어 보고 로컬 서버는 잠깐 실행). 스위치는 Claude Code의 `/mcp disable`과 같은 곳(`~/.claude.json`의 이 폴더 `disabledMcpServers`)에 써서 **이 폴더에서만** 끄고 켭니다. 새로 여는 세션부터 적용되고, 알림과 창 맨 위에 "되돌리기"가 있습니다. 명령·주소·환경 변수 값은 화면에 나오지 않습니다. Codex 서버도 끄고 켤 수 있습니다(`~/.codex/config.toml`의 `enabled`, 모든 폴더에 적용, 처음 바꿀 때 원본을 `config.toml.watchtower-backup`으로 남김).

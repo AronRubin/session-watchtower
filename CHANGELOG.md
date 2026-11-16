@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.35.0
+
+- **Phone setup that walks you through.** The phone panel now checks each step on this computer (Tailscale installed → signed in → `tailscale serve` forwards the board's port) and marks the one to do next. Step 3 shows the serve command for this system (PowerShell on Windows) with a *Run it in a terminal* button, and says what to do the first time: open the `login.tailscale.com` address, turn on HTTPS certificates and leave Funnel off.
+- **No QR code that cannot work.** Until the phone can actually reach the board, the panel hides the phone QR code and the code, and says why (the `127.0.0.1` link only opens on this computer). Before, the phone scanned a `127.0.0.1` link and got a connection error.
+- **Tailscale found on Windows without restarting VS Code.** When `tailscale` is not on VS Code's PATH (Tailscale installed after VS Code started), Watchtower also looks in the usual install folders.
+- The panel and *How it works* open the full setup guide in the README, now with steps for Windows, Mac and Linux and a troubleshooting table (QR opening another app, `127.0.0.1` on the phone, *Connection needed*, a forwarded port).
+
 ## 0.34.0
 
 - **The board says when the roles table cannot be read.** When a group's shared memo is linked but its *Sessions and roles* table cannot be read, the board warns (the tags then show the roles set by hand) and copies a note for the lead with the exact table shape Watchtower reads.
