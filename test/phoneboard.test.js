@@ -37,16 +37,23 @@ const fakeBin = path.join(home, 'fake-bin');
 fs.mkdirSync(fakeBin, { recursive: true });
 const tsScript = path.join(fakeBin, 'tailscale');
 const setTailscale = (body) => { fs.writeFileSync(tsScript, '#!/bin/sh\n' + body + '\n'); fs.chmodSync(tsScript, 0o755); };
-setTailscale(`echo '{"Self":{"DNSName":"board.example.ts.net."}}'`);
+// tailscale status는 이름을, tailscale serve status는 그 이름의 맨 위(/)를 FAKE_SERVE_PORT로 넘기고 있다고 답한다
+const tsOk = `if [ "$1" = "serve" ]; then echo "{\\"Web\\":{\\"board.example.ts.net:443\\":{\\"Handlers\\":{\\"/\\":{\\"Proxy\\":\\"http://127.0.0.1:$FAKE_SERVE_PORT\\"}}}}}"; else echo '{"Self":{"DNSName":"board.example.ts.net."}}'; fi`;
+setTailscale(tsOk);
 process.env.PATH = fakeBin + path.delimiter + process.env.PATH;
 
-test('바깥 주소: Tailscale 이름이면 https 주소, 이상한 이름·Tailscale 없음은 null', { skip: process.platform === 'win32' }, async () => {
+test('바깥 주소: Tailscale 이름이면 https 주소, 이상한 이름·Tailscale 없음은 null, 포트를 주면 serve가 그 포트로 넘길 때만', { skip: process.platform === 'win32' }, async () => {
+  process.env.FAKE_SERVE_PORT = '5290';
   assert.strictEqual(await pb.publicBase(), 'https://board.example.ts.net');
+  assert.strictEqual(await pb.publicBase(5290), 'https://board.example.ts.net', 'serve가 이 보드 포트로 넘김');
+  assert.strictEqual(await pb.publicBase(5291), null, 'serve가 다른 포트(예: 따로 설치한 보드)를 가리키면 그 링크는 엉뚱한 보드로 간다');
+  setTailscale(`if [ "$1" = "serve" ]; then echo '{}'; else echo '{"Self":{"DNSName":"board.example.ts.net."}}'; fi`);
+  assert.strictEqual(await pb.publicBase(5290), null, 'Tailscale만 깔고 serve를 아직 안 했으면 준비 안 됨');
   setTailscale(`echo '{"Self":{"DNSName":"evil host;rm -rf ~"}}'`);
   assert.strictEqual(await pb.publicBase(), null);
   setTailscale('exit 1');
   assert.strictEqual(await pb.publicBase(), null);
-  setTailscale(`echo '{"Self":{"DNSName":"board.example.ts.net."}}'`);
+  setTailscale(tsOk);
 });
 
 let servers = [];
@@ -171,6 +178,7 @@ test('확장: 보드가 켜져 있으면 세션 창에 단추, 누르면 QR·코
   // 컴퓨터로도 보기: 세션 창의 컴퓨터 단추 → 휴대폰 연결 링크와 같은 주소(Tailscale 이름)를 연다. 연결 안 된 브라우저면 알림 단추로 새 코드를 써서 연결
   assert.match(web.view.webview.html, /id="btnBoardPc" hidden/);
   assert.strictEqual(web.lastPayload().strings.boardPc, 'Open the phone board in this computer\'s browser');
+  process.env.FAKE_SERVE_PORT = String(a.address().port); // serve가 이 보드 포트로 넘기고 있다
   stub.calls.length = 0;
   web.send({ type: 'boardPc' });
   const until6 = Date.now() + 9000;
@@ -191,7 +199,7 @@ test('확장: 보드가 켜져 있으면 세션 창에 단추, 누르면 QR·코
   assert.ok(/^http:\/\/127\.0\.0\.1:\d+\/$/.test(stub.calls.find((c) => c[0] === 'asExternalUri')[1]), '보드 포트의 이 컴퓨터 주소를 넘긴다');
   assert.deepStrictEqual(stub.calls.filter((c) => c[0] === 'openExternal').map((c) => c[1]), ['http://localhost:61234/', 'http://localhost:61234/pair?c=AB12CD34']);
   stub.state.externalUri = undefined;
-  setTailscale(`echo '{"Self":{"DNSName":"board.example.ts.net."}}'`);
+  setTailscale(tsOk);
 
   // 보드가 꺼지면 단추가 사라지고, 링크를 만들려 하면 안내한다
   a.close(); b.close();

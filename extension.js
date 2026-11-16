@@ -4093,7 +4093,7 @@ async function pairBuiltIn(run) {
   const boards = await refreshPhoneBoards(true);
   let made;
   try { made = boardhost.pairCode(builtInDir()); } catch (e) { vscode.window.showWarningMessage(L('Could not make a link: {0}', String((e && e.message) || e))); return undefined; }
-  const ts = await phoneboard.publicBase();
+  const ts = await phoneboard.publicBase(run.port);
   const base = ts || `http://127.0.0.1:${run.port}`;
   const t = new Date(made.exp);
   const r = { ok: true, url: base + '/pair?c=' + made.code, code: made.code, until: `${t.getHours()}:${pad2(t.getMinutes())}:${pad2(t.getSeconds())}`, local: !ts };
@@ -4110,7 +4110,7 @@ async function phoneBoardOpen() {
   const boards = await refreshPhoneBoards(true);
   const board = boards.find((b) => b.local) || boards[0];
   if (!board) return phoneBoardPair(); // 보드가 없거나 안 켜졌을 때의 안내는 휴대폰 연결과 같다
-  let base = await phoneboard.publicBase();
+  let base = await phoneboard.publicBase(board.port);
   if (!base) {
     try { base = String(await vscode.env.asExternalUri(vscode.Uri.parse(`http://127.0.0.1:${board.port}/`))).replace(/\/+$/, ''); } catch { base = `http://127.0.0.1:${board.port}`; }
   }

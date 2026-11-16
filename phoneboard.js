@@ -78,15 +78,29 @@ function pair(folder, timeoutMs = PAIR_MS) {
 }
 
 // 보드를 휴대폰·다른 컴퓨터에서 여는 주소. 보드의 `cli.js pair`와 같은 방법: 이 컴퓨터의 Tailscale 이름(https://<이름>).
+// port를 주면 `tailscale serve`가 그 이름의 맨 위(/)를 이 컴퓨터의 그 포트로 실제로 넘기고 있을 때만 그 주소를 준다.
+// (Tailscale만 깔고 serve를 아직 안 했거나, serve가 다른 포트 — 예: 따로 설치한 보드 — 를 가리키면 그 링크는 열리지 않거나
+//  엉뚱한 보드로 간다. 그때는 null을 돌려 패널이 "아직 준비 안 됨"과 serve 명령을 보여 주게 한다)
 // Tailscale이 없으면 null(그때는 이 컴퓨터의 127.0.0.1 주소를 쓴다)
-function publicBase(timeoutMs = 3000) {
-  return new Promise((resolve) => {
-    execFile('tailscale', ['status', '--json'], { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, windowsHide: true }, (err, out) => {
-      if (err) return resolve(null);
-      try {
-        const dns = String((JSON.parse(out).Self || {}).DNSName || '').replace(/\.$/, '');
-        resolve(/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/.test(dns) ? 'https://' + dns : null);
-      } catch { resolve(null); }
+function publicBase(port, timeoutMs = 3000) {
+  const run = (args) => new Promise((resolve) => {
+    execFile('tailscale', args, { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, windowsHide: true }, (err, out) => resolve(err ? null : out));
+  });
+  return run(['status', '--json']).then((out) => {
+    let dns = '';
+    try { dns = String((JSON.parse(out || '{}').Self || {}).DNSName || '').replace(/\.$/, ''); } catch { return null; }
+    if (!/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/.test(dns)) return null;
+    if (!port) return 'https://' + dns;
+    return run(['serve', 'status', '--json']).then((sv) => {
+      let web = {};
+      try { web = (JSON.parse(sv || '{}') || {}).Web || {}; } catch { return null; }
+      const want = new RegExp(`^https?://(127\\.0\\.0\\.1|localhost):${Number(port)}/?$`);
+      for (const [hostPort, w] of Object.entries(web)) {
+        const [host, p] = String(hostPort).split(':');
+        const h = w && w.Handlers && w.Handlers['/'];
+        if (host.toLowerCase() === dns.toLowerCase() && h && typeof h.Proxy === 'string' && want.test(h.Proxy)) return 'https://' + dns + (p && p !== '443' ? ':' + p : '');
+      }
+      return null;
     });
   });
 }

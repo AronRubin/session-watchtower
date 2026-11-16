@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.32.2
+
+- **The phone link is https only when Tailscale serve really points at the board.** Before, having Tailscale installed was enough for the panel to make an https link and say "This computer is ready", even when `tailscale serve` was not set up yet, or pointed at another port (such as a separately installed board), so the phone could not open the link or reached the wrong board. Now Watchtower checks `tailscale serve status`; if the board's port is not served, the panel says it is not ready yet and shows the `tailscale serve` command, and the computer button opens the board through VS Code instead.
+
 ## 0.32.1
 
 - **The phone board speaks English.** Its pages, the connection screens, error messages and phone notifications are in English unless the browser's language is Korean, and the board's settings have a language switch (automatic, 한국어, English). Copied from session-board e36f672. Session titles and conversations stay as written.
