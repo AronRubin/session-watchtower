@@ -410,7 +410,13 @@
   function renderTop() {
     const d = S.data;
     $top.textContent = '';
-    add($top, el('h1', '', '세션 보드'));
+    // 제목을 누르면 첫 화면(전체 상황)으로 간다
+    const home = el('a', 'homelink');
+    home.href = '#';
+    home.setAttribute('aria-label', '첫 화면으로');
+    add(home, el('h1', '', '세션 보드'));
+    home.addEventListener('click', (e) => { e.preventDefault(); S.drawer = false; go(null); });
+    add($top, home);
     const hosts = hostList(d);
     $top.classList.toggle('withtabs', hosts.length > 0);
     if (hosts.length) {
@@ -1115,7 +1121,7 @@
     const back = el('button', 'back');
     back.type = 'button';
     back.setAttribute('aria-label', '목록으로');
-    add(back, icon('back'));
+    add(back, icon('back'), el('span', 'backt', '전체 보기'));
     back.addEventListener('click', () => go(null));
     const head = el('div', 'hd2');
     const line = el('div', 'muted small sl');
