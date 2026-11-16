@@ -19,6 +19,7 @@ const freePort = () => new Promise((resolve) => { const s = http.createServer();
 const get = (port, p, headers = {}) => new Promise((resolve, reject) => {
   const req = http.get({ host: '127.0.0.1', port, path: p, headers: { Connection: 'close', ...headers }, agent: false }, (res) => { res.resume(); res.on('end', () => resolve({ status: res.statusCode, headers: res.headers })); });
   req.on('error', reject);
+  req.setTimeout(5000, () => req.destroy(new Error('no answer in 5 s: ' + p))); // 답 없는 서버에 닿으면 끝없이 기다리지 않고 어디서 멈췄는지 남긴다
 });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(fn, what, ms = 9000) {

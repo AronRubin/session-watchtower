@@ -24,6 +24,7 @@ function get(port, p, headers = {}) {
       res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body }));
     });
     req.on('error', reject);
+    req.setTimeout(5000, () => req.destroy(new Error('no answer in 5 s: ' + p))); // 답 없는 서버에 닿아도 끝없이 기다리지 않게
   });
 }
 const refused = (port) => get(port, '/healthz').then(() => false, (e) => e.code === 'ECONNREFUSED');
