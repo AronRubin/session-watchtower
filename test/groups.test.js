@@ -322,6 +322,12 @@ test('팀 구성 추천 받기: 만들 것과 세션 수를 받아, 역할 목�
   assert.match(t, /Only one session deploys/);
   assert.match(t, /a table: session name \| role \| what it does \| first step/);
   assert.match(t, /do not create or change files in this step/);
+  // 팀 문서 4종: 1단계 답에 있음·없음 표, 없는 것만 사용자 승인 뒤 틀로(체크리스트는 맨 위에 진행 점수표)
+  assert.match(t, /\(5\) whether the four team documents exist \(plan, design, development checklist, test checklist; a file with another name that does the same job counts\)/);
+  assert.ok(t.includes('## Step 2.1: team documents (only those the user agreed to in step 1 (5))'));
+  assert.match(t, /Create documents only after the user approves; use existing ones as they are/);
+  assert.match(t, /# <project name> development checklist\nDocuments: [^\n]*\n\n## Progress scoreboard\n\n\*\*Passed 0 \/ 0 \(0%\)\*\* `░{10}`/, '개발 체크리스트 맨 위가 진행 점수표');
+  assert.ok(t.includes('Documents: plan <path> · design <path> · development checklist <path> · test checklist <path>'), '보드 제목 아래 문서 줄');
   await waitFor(() => stub.calls.filter((c) => c[0] === 'claude-vscode.editor.open' && c.length === 1).length > opened, '새 세션 열기');
 
   // 그룹 없이(세션 창 메뉴에서)도 된다
@@ -496,6 +502,8 @@ test('팀 명단 파일: 대장이 읽도록 그룹마다 명단(대장 먼저·
   assert.match(brief, /Do not change the section numbers, names or order/);
   assert.match(brief, /8\. Keep this board to short status lines\. Put long text such as research results or designs in separate files/);
   assert.ok(brief.includes('# Chatbot ops team board'), '틀 제목은 그룹 이름');
+  assert.match(brief, /Team documents: look once in the project folder for a plan, a design, a development checklist and a test checklist/, '대장은 팀 문서 4종을 찾아보고 없으면 한 번만 추천');
+  assert.match(brief, /do not ask again after the user says no/);
   // 대장이 연결 요청 파일에 보드 경로를 쓰면 확장이 공유 메모로 연결하고 요청 파일을 지운다. 잘못된 경로는 연결하지 않고 명단에 적는다
   const req = file.replace(/\.md$/, '.memo');
   fs.writeFileSync(req, '/no/such/board.md\n');
@@ -512,6 +520,7 @@ test('팀 명단 파일: 대장이 읽도록 그룹마다 명단(대장 먼저·
   panel.send({ type: 'brief', sid: SID.w });
   await waitFor(() => /Handing out roles/.test(stub.state.clipboard || ''), '메모 연결 뒤 대장 역할 안내');
   assert.ok(!stub.state.clipboard.includes('New board template') && !stub.state.clipboard.includes('```markdown'), '틀은 메모가 없을 때만');
+  assert.match(stub.state.clipboard, /Team documents: look once in the project folder/, '팀 문서 확인은 메모가 있어도');
   panel.send({ type: 'unlinkMemo' });
   await waitFor(() => panel.lastPayload().memo.file === '', '연결 끊음');
   panel.send({ type: 'brief', sid: SID.d });
@@ -552,4 +561,24 @@ test('그룹 이름 바꾸기와 지우기: 지우면 세션은 그대로 목록
   await waitFor(() => !fs.existsSync(path.join(stub.context.globalStorageUri.fsPath, 'teams', id + '.md')), '지운 그룹의 명단 파일도 지운다');
   const warn = stub.calls.find((c) => c[0] === 'warn' && /Delete the group "Ops"/.test(c[1]));
   assert.deepStrictEqual(warn[2][0], { modal: true }, '지우기 전에 확인을 받는다');
+});
+
+test('팀 문서 틀: 체크리스트 둘은 제목·문서 줄 바로 아래가 진행 점수표, 막대는 10칸, 숫자 열은 오른쪽 정렬, 테스트 체크리스트에는 시험 층 표', () => {
+  for (const ko of [true, false]) {
+    const tpl = ext._test.teamDocTemplates(ko);
+    const parts = tpl.split(/\n(?=<!-- )/);
+    assert.strictEqual(parts.length, 4, '문서 넷');
+    const [plan, design, dev, test] = parts;
+    const board = ko ? '## 진행 점수표' : '## Progress scoreboard';
+    for (const doc of [dev, test]) {
+      const lines = doc.split('\n');
+      assert.strictEqual(lines[3], '', '제목·문서 줄 다음 빈 줄');
+      assert.strictEqual(lines[4], board, '맨 위가 진행 점수표');
+      for (const bar of doc.match(/`[█░]+`/g)) assert.strictEqual([...bar.slice(1, -1)].length, 10, '막대는 10칸');
+      assert.ok(doc.includes('|---|---|---:|---:|---:|---:|---:|---:|'), '숫자 열 오른쪽 정렬');
+    }
+    assert.ok(!plan.includes(board) && !design.includes(board), '기획서·설계서에는 점수표가 없다');
+    assert.match(test, ko ? /\| 자동 시험 \|[\s\S]*\| 실제 환경 \|[\s\S]*\| 사람 확인 \|/ : /\| Automated tests \|[\s\S]*\| Real environment \|[\s\S]*\| Human check \|/, '시험 층');
+    assert.match(test, ko ? /층끼리 서로 대신하지 않습니다/ : /One layer never stands in for another/);
+  }
 });

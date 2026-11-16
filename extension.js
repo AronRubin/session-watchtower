@@ -1161,6 +1161,7 @@ function roleBrief(groupId, sid) {
       if (!memo) L1.push('', '새 보드 틀 (새로 만들 때는 이 틀을 그대로 복사해 채웁니다. 절 번호·이름·순서를 바꾸지 않고, 조사 결과 같은 긴 글은 따로 파일에 두고 경로만 적습니다):', '```markdown', ...teamBoardTemplate(true, g.name).split('\n'), '```');
       L1.push('', memo ? '지금 바로: 팀 명단을 읽고, 세션마다 역할을 정해 표에 적은 뒤 각 세션에 알려 주세요. 끝나면 사용자에게 세션별 역할을 표로 짧게 보고합니다.'
         : '지금 바로: 팀 명단을 읽고, 공유 메모가 없으면 쓰던 보드를 연결하거나 위 틀로 새 보드를 만들어 연결하고, 세션마다 역할을 정해 표에 적은 뒤 각 세션에 알려 주세요. 끝나면 사용자에게 세션별 역할을 표로 짧게 보고합니다.');
+      L1.push('', teamDocCheck(true));
     }
     L1.push('', '이 안내를 읽었으면 내 역할을 한 줄로 확인해 주세요.');
   } else {
@@ -1194,6 +1195,7 @@ function roleBrief(groupId, sid) {
       if (!memo) L1.push('', 'New board template (when you create a board, copy it as it is and fill it in. Do not change the section numbers, names or order; keep long text such as research results in separate files and write only their paths here):', '```markdown', ...teamBoardTemplate(false, g.name).split('\n'), '```');
       L1.push('', memo ? 'Right now: read the team roster, give every session a role in the table and tell each session. Then report the roles to the user in a short table.'
         : 'Right now: read the team roster, link the board you use or create one from the template above and link it, give every session a role in the table and tell each session. Then report the roles to the user in a short table.');
+      L1.push('', teamDocCheck(false));
     }
     L1.push('', 'When you have read this, confirm your role in one line.');
   }
@@ -1334,7 +1336,7 @@ function writeTeamRosters() {
 function teamBoardTemplate(ko, name) {
   const title = name || (ko ? '<프로젝트 이름>' : '<project name>');
   return ko ? [
-    `# ${title} 협업 보드`, '마지막 갱신: <시각> · <세션>', '',
+    `# ${title} 협업 보드`, '마지막 갱신: <시각> · <세션>', '문서: 기획서 <경로> · 설계서 <경로> · 개발 체크리스트 <경로> · 테스트 체크리스트 <경로> (없으면 이 줄을 지웁니다)', '',
     '## 0. 사용자 결정 대기 (사용자는 이 칸만 보면 됩니다)', '| # | 질문 | 추천 | 묻는 세션 | 물은 시각 |', '|---|---|---|---|---|', '',
     '## 1. 세션과 역할 (대장·배포는 고정, 나머지 역할은 할 일마다 대장이 고칩니다)', '| 역할 | 세션 이름 | 맡은 범위(폴더·파일) | 지금 하는 일(한 줄) |', '|---|---|---|---|', '',
     '## 2. 할 일과 순서', '| # | 할 일 | 담당 | 먼저 끝나야 하는 일 | 상태 |', '|---|---|---|---|---|', '',
@@ -1352,7 +1354,7 @@ function teamBoardTemplate(ko, name) {
     '8. 이 보드에는 상태만 짧게 적습니다. 조사 결과·설계 같은 긴 글은 따로 파일에 두고 경로만 적습니다.', '',
     '## 7. 인계', '| 시각 | 세션 | 넘기는 내용 |', '|---|---|---|', '',
   ].join('\n') : [
-    `# ${title} team board`, 'Last updated: <time> · <session>', '',
+    `# ${title} team board`, 'Last updated: <time> · <session>', 'Documents: plan <path> · design <path> · development checklist <path> · test checklist <path> (delete this line if there are none)', '',
     '## 0. Decisions waiting for the user (the user only needs this section)', '| # | Question | Recommendation | Asked by | Asked at |', '|---|---|---|---|---|', '',
     '## 1. Sessions and roles (the lead and the deployer are fixed; the lead changes the other roles task by task)', '| Role | Session name | Scope (folders, files) | Doing now (one line) |', '|---|---|---|---|', '',
     '## 2. Tasks and order', '| # | Task | Owner | Must finish first | Status |', '|---|---|---|---|---|', '',
@@ -1370,6 +1372,54 @@ function teamBoardTemplate(ko, name) {
     '8. Keep this board to short status lines. Put long text such as research results or designs in separate files and write only their paths here.', '',
     '## 7. Handoff', '| Time | Session | What to hand over |', '|---|---|---|', '',
   ].join('\n');
+}
+
+// 팀 문서 4종(기획서·설계서·개발 체크리스트·테스트 체크리스트) 틀. 확장은 파일 이름으로 있음·없음을 판정하지 않는다
+// (이름이 제각각이라 틀린다). 대장이 작업 폴더를 찾아보고 없는 것만 만들자고 추천하고, 사용자가 승인하면 이 틀로 만든다.
+// 체크리스트는 맨 위에 진행 점수표: 막대는 █·░ 10칸, 채운 칸 = floor(통과율/10), 100%일 때만 10칸
+function teamDocTemplates(ko) {
+  const t = ko ? '<프로젝트 이름>' : '<project name>';
+  const links = (self) => ko
+    ? `문서: ${['기획서', '설계서', '개발 체크리스트', '테스트 체크리스트'].map((n) => (n === self ? `${n}(이 문서)` : `${n} <경로>`)).join(' · ')}`
+    : `Documents: ${['Plan', 'Design', 'Development checklist', 'Test checklist'].map((n) => (n === self ? `${n} (this one)` : `${n} <path>`)).join(' · ')}`;
+  const head = ko ? '| 단계 | 점수 | 통과 | 일부 | 남음 | 막힘 | 실패 | 전체 |' : '| Stage | Score | Passed | Partly | Left | Blocked | Failed | Total |';
+  const sep = '|---|---|---:|---:|---:|---:|---:|---:|';
+  const zero = '`░░░░░░░░░░` 0% | 0 | 0 | 0 | 0 | 0 | 0 |';
+  const summary = ko ? '**전체 통과 0 / 0 (0%)** `░░░░░░░░░░` · 일부 통과 0 · 막힘 0 · 실패 0' : '**Passed 0 / 0 (0%)** `░░░░░░░░░░` · partly 0 · blocked 0 · failed 0';
+  const rule = ko
+    ? '세는 규칙: 통과는 증거(커밋·시험 결과)가 있을 때만 셉니다. 일부 통과는 통과로 세지 않습니다. 막대는 10칸, 채운 칸 = 통과율을 10으로 나눈 몫(100%일 때만 10칸). 숫자는 아래 항목의 상태를 세어 다시 계산하고 손으로 숫자만 고치지 않습니다. 상태를 바꾼 세션이 같은 변경에서 점수표도 고칩니다.'
+    : 'Counting: an item passes only with evidence (a commit, a test result). Partly passed does not count as passed. The bar has 10 cells; filled cells = pass rate divided by 10, rounded down (10 only at 100%). Recount the numbers from the item states below; never edit only the numbers. The session that changes a state updates this scoreboard in the same change.';
+  const item = ko ? '- [ ] <항목> — 상태: 남음 · 증거: -' : '- [ ] <item> — state: left · evidence: -';
+  return ko ? [
+    '<!-- 기획서 (예: docs/PLAN.md) -->', `# ${t} 기획서`, '상태: 초안 · 판 1 · <날짜>', links('기획서'), '',
+    '## 1. 목적', '## 2. 쓰는 사람', '## 3. 만들 것', '## 4. 만들지 않을 것', '## 5. 단계', '## 6. 성공 기준', '## 7. 결정 대기 (사용자 결정이 필요한 것)', '',
+    '<!-- 설계서 (예: docs/DESIGN.md) -->', `# ${t} 설계서`, '상태: 초안 · 판 1 · <날짜>', links('설계서'), '',
+    '## 1. 구조', '## 2. 데이터', '## 3. 외부 연결', '## 4. 보안', '## 5. 대안과 고른 이유', '## 6. 위험', '',
+    '<!-- 개발 체크리스트 (예: docs/DEV_CHECKLIST.md) -->', `# ${t} 개발 체크리스트`, links('개발 체크리스트'), '',
+    '## 진행 점수표', '', summary, '', head, sep, `| 1. <단계> | ${zero}`, '', rule, '', '## 1. <단계>', item, '',
+    '<!-- 테스트 체크리스트 (예: docs/TEST_CHECKLIST.md) -->', `# ${t} 테스트 체크리스트`, links('테스트 체크리스트'), '',
+    '## 진행 점수표', '', summary, '', head, sep, `| 1. <단계> | ${zero}`, '',
+    '시험 층:', '', '| 층 | 점수 | 통과 | 일부 | 남음 | 막힘 | 실패 | 전체 |', sep, `| 자동 시험 | ${zero}`, `| 실제 환경 | ${zero}`, `| 사람 확인 | ${zero}`, '',
+    rule + ' 층끼리 서로 대신하지 않습니다(자동 시험 통과가 사람 확인을 대신하지 않음).', '', '## 1. <단계>', item,
+  ].join('\n') : [
+    '<!-- Plan (for example docs/PLAN.md) -->', `# ${t} plan`, 'State: draft · version 1 · <date>', links('Plan'), '',
+    '## 1. Purpose', '## 2. Who uses it', '## 3. What we build', '## 4. What we do not build', '## 5. Stages', '## 6. Success criteria', '## 7. Decisions waiting (for the user)', '',
+    '<!-- Design (for example docs/DESIGN.md) -->', `# ${t} design`, 'State: draft · version 1 · <date>', links('Design'), '',
+    '## 1. Structure', '## 2. Data', '## 3. External connections', '## 4. Security', '## 5. Alternatives and why this one', '## 6. Risks', '',
+    '<!-- Development checklist (for example docs/DEV_CHECKLIST.md) -->', `# ${t} development checklist`, links('Development checklist'), '',
+    '## Progress scoreboard', '', summary, '', head, sep, `| 1. <stage> | ${zero}`, '', rule, '', '## 1. <stage>', item, '',
+    '<!-- Test checklist (for example docs/TEST_CHECKLIST.md) -->', `# ${t} test checklist`, links('Test checklist'), '',
+    '## Progress scoreboard', '', summary, '', head, sep, `| 1. <stage> | ${zero}`, '',
+    'Test layers:', '', '| Layer | Score | Passed | Partly | Left | Blocked | Failed | Total |', sep, `| Automated tests | ${zero}`, `| Real environment | ${zero}`, `| Human check | ${zero}`, '',
+    rule + ' One layer never stands in for another (passing automated tests does not replace the human check).', '', '## 1. <stage>', item,
+  ].join('\n');
+}
+
+// 대장이 팀 문서 4종을 확인하는 규칙(대장 세션 요청·대장 역할 안내에 같이 쓴다)
+function teamDocCheck(ko) {
+  return ko
+    ? '팀 문서: 작업 폴더에 기획서·설계서·개발 체크리스트·테스트 체크리스트가 있는지 한 번 찾아봅니다(이름이 달라도 같은 역할이면 있음). 없는 것이 있으면 사용자에게 만들자고 한 번만 추천합니다. 작은 수정이면 추천하지 않고, 사용자가 거절하면 다시 묻지 않습니다. 만들기는 사용자가 승인한 뒤에만, 있는 문서는 새로 만들지 않고 그대로 씁니다. 체크리스트 둘은 맨 위에 진행 점수표(전체 통과 n / m와 10칸 막대, 단계 표)를 두고, 숫자는 항목 상태를 세어 다시 계산합니다. 공개 저장소면 비밀값·실제 고객 정보를 넣지 않습니다.'
+    : 'Team documents: look once in the project folder for a plan, a design, a development checklist and a test checklist (a file with a different name that does the same job counts). If one is missing, recommend creating it to the user once. Do not recommend it for a small change, and do not ask again after the user says no. Create documents only after the user approves; use existing ones as they are. Both checklists start with a progress scoreboard (passed n / m with a 10-cell bar, and a table per stage), recounted from the item states. In a public repository, put no secrets or real customer data in them.';
 }
 
 // ---------- 팀 구성 추천 요청 ----------
@@ -1420,12 +1470,15 @@ async function planTeam(groupId) {
       '- 배포(서버에 올리기)는 한 세션만 맡습니다.',
       '- 대장과 배포는 고정 역할입니다. 나머지 작업 세션의 역할(개발·시험·검토·문서 등)은 고정하지 말고 할 일에 따라 바꿉니다. 자기가 만든 변경을 자기가 검토·시험하게 하지 마세요.',
       ...(both ? ['- Claude Code 세션과 Codex 세션은 서로 메시지를 직접 주고받지 못합니다. 주고받을 일은 협업 보드로 하게 나눠 주세요.'] : []),
-      '답 형식: (1) 추천 세션 수와 이유 (2) 표: ' + table + ' (3) 동시에 하면 안 되는 일과 순서 (4) 세션을 더 적게 써도 되는 경우.',
+      '답 형식: (1) 추천 세션 수와 이유 (2) 표: ' + table + ' (3) 동시에 하면 안 되는 일과 순서 (4) 세션을 더 적게 써도 되는 경우 (5) 팀 문서 4종(기획서·설계서·개발 체크리스트·테스트 체크리스트)이 있는지 표로(이름이 달라도 같은 역할이면 있음), 없는 것만 만들자고 추천(작은 수정이면 생략).',
       '사용자가 좋다고 하면 2단계로 갑니다.', '',
       '## 2단계: 협업 보드 만들기',
       '- 보드 파일을 어디에 둘지 사용자에게 묻습니다(기본: 작업 폴더의 team-board.md). Git에 올릴지도 묻습니다.',
       '- 아래 틀대로 만들고, 1단계에서 정한 세션과 할 일을 채웁니다.', '', '```markdown', ...teamBoardTemplate(ko).split('\n'), '```', '',
       '- 다 만들면 사용자에게 알립니다: Session Watchtower를 쓰면 그룹 보드의 "공유 메모 → 파일 연결"로 이 파일을 연결하면 한 화면에서 보인다고.', '',
+      '## 2-1단계: 팀 문서 (1단계 (5)에서 사용자가 만들자고 한 것만)',
+      '- ' + teamDocCheck(true),
+      '- 아래 틀에서 필요한 문서만 골라 각각 따로 파일로 만들고(위치는 사용자에게 묻기), 보드 제목 아래 "문서:" 줄에 경로를 적습니다.', '', '```markdown', ...teamDocTemplates(true).split('\n'), '```', '',
       '## 3단계: 작업 세션 띄우기',
       '- 작업 세션마다 붙여 넣을 첫 지시를 하나씩 씁니다: 역할, 맡은 범위(폴더·파일), 보드 파일 경로, 보드 규칙(6절), 첫 할 일, 일을 끝내면 3절 "보고"에 한 줄 적기.',
       '- 사용자가 새 세션을 열어 붙여 넣습니다. 세션 이름을 알려 주면 보드 1절에 적습니다.', '',
@@ -1452,12 +1505,15 @@ async function planTeam(groupId) {
       '- Only one session deploys (puts things on servers).',
       '- The lead and the deployer are fixed roles. The roles of the other working sessions (develop, test, review, docs and so on) are not fixed: change them as the work needs. Never have a session review or test its own change.',
       ...(both ? ['- Claude Code sessions and Codex sessions cannot message each other directly. Plan for them to exchange work through the team board.'] : []),
-      'Answer with: (1) the number of sessions and why (2) a table: ' + table + ' (3) work that must not run at the same time, and the order (4) when fewer sessions would do.',
+      'Answer with: (1) the number of sessions and why (2) a table: ' + table + ' (3) work that must not run at the same time, and the order (4) when fewer sessions would do (5) whether the four team documents exist (plan, design, development checklist, test checklist; a file with another name that does the same job counts), in a table, recommending to create only the missing ones (skip this for a small change).',
       'When the user agrees, go to step 2.', '',
       '## Step 2: create the team board',
       '- Ask the user where to put the board file (default: team-board.md in the project folder) and whether it should go into git.',
       '- Create it from the template below and fill in the sessions and tasks from step 1.', '', '```markdown', ...teamBoardTemplate(ko).split('\n'), '```', '',
       '- Then tell the user: with Session Watchtower, link this file under "Shared memo → Link a file" on the group board to see it next to the sessions.', '',
+      '## Step 2.1: team documents (only those the user agreed to in step 1 (5))',
+      '- ' + teamDocCheck(false),
+      '- Take only the documents you need from the template below, each as its own file (ask the user where), and write their paths on the "Documents:" line under the board title.', '', '```markdown', ...teamDocTemplates(false).split('\n'), '```', '',
       '## Step 3: start the working sessions',
       '- Write a first instruction for each working session: its role, its scope (folders and files), the board path, the board rules (section 6), its first task, and that it writes one line under section 3 "Reports" when it finishes something.',
       '- The user opens each new session and pastes it. When the user tells you the session names, add them to section 1.', '',
@@ -4708,4 +4764,4 @@ function deactivate() {
   })]).then(() => undefined);
 }
 
-module.exports = { activate, deactivate, _test: { boardState: () => (boardHost ? boardHost.state() : 'off'), syncBuiltInBoard: (f) => syncBuiltInBoard(f), takeOpenRequests: () => takeOpenRequests(), canOpenSession: (s) => canOpenSession(s), usageRefreshing: () => usageRefreshing, parseBoardRoles, hunksToSides, applyEdit, displayDir, fmtTime, sidesForCodex, sameTitle, sessionKeyOf, setCodexCli: (v) => { codexCli = v; hasCodexCli.fixed = true; }, setClaudeBin: (p) => { claudeBinFixed = p; } } };
+module.exports = { activate, deactivate, _test: { teamDocTemplates, teamDocCheck, boardState: () => (boardHost ? boardHost.state() : 'off'), syncBuiltInBoard: (f) => syncBuiltInBoard(f), takeOpenRequests: () => takeOpenRequests(), canOpenSession: (s) => canOpenSession(s), usageRefreshing: () => usageRefreshing, parseBoardRoles, hunksToSides, applyEdit, displayDir, fmtTime, sidesForCodex, sameTitle, sessionKeyOf, setCodexCli: (v) => { codexCli = v; hasCodexCli.fixed = true; }, setClaudeBin: (p) => { claudeBinFixed = p; } } };

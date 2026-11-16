@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.32.0
+
+- **The lead checks the team documents.** The lead session request and the lead's role note now ask the lead to look for a plan, a design, a development checklist and a test checklist in the project (a file with another name that does the same job counts) and to recommend creating only the missing ones: once, not for a small change, never again after you say no, and only after you approve. Watchtower itself does not judge by file names.
+- New templates for the four documents. Both checklists start with a progress scoreboard: `Passed n / m (p%)` with a 10-cell bar, a table per stage with right-aligned numbers, and the test checklist has a table per test layer (automated, real environment, human check). The counting rules come with it: only items with evidence pass, the numbers are recounted from the items, and the session that changes a state updates the scoreboard in the same change.
+- The team board template has a *Documents* line under the title with the paths of these documents.
+
 ## 0.31.3
 
 - **A lead without a shared memo gets the board template.** The lead's role note, when no shared memo is linked yet, now includes the team board template (decisions waiting for the user at the top) and says to keep its section numbers, names and order. Before, the lead could create a board in any shape, and the user's section ended up in the middle.
