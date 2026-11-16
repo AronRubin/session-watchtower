@@ -2,7 +2,7 @@
   "name": "session-watchtower",
   "displayName": "Session Watchtower for Claude Code",
   "description": "%description%",
-  "version": "0.32.3",
+  "version": "0.33.0",
   "scripts": {
     "test": "node --test --test-timeout=180000 test/*.test.js",
     "shot": "bash tools/screenshot/run.sh"
@@ -496,6 +496,19 @@
           "type": "boolean",
           "default": true,
           "description": "%config.usageStatusBar%"
+        },
+        "claudeSessionChanges.newSessionTool": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex"
+          ],
+          "enumDescriptions": [
+            "%config.newSessionTool.claude%",
+            "%config.newSessionTool.codex%"
+          ],
+          "default": "claude",
+          "description": "%config.newSessionTool%"
         },
         "claudeSessionChanges.phoneBoard.enabled": {
           "type": "boolean",

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.33.0
+
+- **New session can open Codex.** The setting `newSessionTool` chooses what the Sessions view's **New session** button opens: `claude` (a new Claude Code conversation, as before) or `codex` (a new Codex chat: the Codex extension's *New Codex Agent*, its sidebar chat if that fails, or the Codex CLI in a terminal when the extension is not installed). The button's tooltip says which one.
+- **The ⚠ badge can clear the overlap warning.** Clicking the ⚠ badge on a session row lists the files that another session also changed, with who changed them. Pick one to compare both changes or stop the warning for it, or stop the warning for all of them at once. Before, the only places were the notification at that moment and the `overlapIgnore` setting.
+- The built-in phone board gets 12 fixes from a review of session-board (71f9dc6): no endless reload on the phone when a merged board refuses, a broken cookie no longer errors, the reading thread restarts after a crash, multi-line private keys in changed lines are hidden, file names with spaces or non-ASCII letters in commits, a waiting notification is not repeated after 24 hours, and smaller fixes on the page.
+
 ## 0.32.3
 
 - The phone board also notices when a session that writes in English is waiting for your decision (it already did for Korean). Copied from session-board be753fd; on 46 recent sessions no Korean verdict changed.

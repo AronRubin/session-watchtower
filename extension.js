@@ -74,6 +74,7 @@ function cfg() {
     usageStatusBar: c.get('usageStatusBar', true) !== false,
     phoneBoardPorts: (Array.isArray(c.get('phoneBoard.ports')) ? c.get('phoneBoard.ports') : [5290, 5291]).map(Number).filter((n) => Number.isInteger(n) && n > 0 && n < 65536).slice(0, 8),
     phoneBoardFolder: String(c.get('phoneBoard.folder', '') || ''),
+    newSessionTool: c.get('newSessionTool', 'claude') === 'codex' ? 'codex' : 'claude',
     phoneBoardEnabled: c.get('phoneBoard.enabled', false) === true,
     phoneBoardPort: (() => { const v = Number(c.get('phoneBoard.port', 5290)); return Number.isInteger(v) && v >= 1024 && v < 65536 ? v : 5290; })(),
     phoneBoardLabel: String(c.get('phoneBoard.label', '') || '').slice(0, 30),
@@ -403,6 +404,36 @@ function checkOverlaps() {
       }
     }
   }
+}
+
+// 세션 줄의 ⚠ 표를 누름: 겹친 파일을 보여 주고, 파일마다 두 변경 비교·경고 그만, 또는 모두 경고 그만
+async function showOverlaps(sid) {
+  const m = model.find((x) => x.sid === sid);
+  const files = m ? m.files.filter((f) => f.overlap && f.overlap.length) : [];
+  if (!files.length) return undefined;
+  const all = { label: L('Stop warning for these {0} file(s)', files.length), all: true };
+  const items = [all, ...files.map((f) => ({
+    label: path.basename(f.path),
+    description: L('also changed by {0}', f.overlap.map((o) => '"' + o.title + '"').join(', ')),
+    detail: displayDir(f.path, raw.find((x) => x.sid === sid) || {}) || undefined, f,
+  }))];
+  const pick = await vscode.window.showQuickPick(items, { placeHolder: L('Files that another session also changed') });
+  if (!pick) return undefined;
+  const mute = (paths) => {
+    saveOverlapIgnore([...new Set([...loadOverlapIgnore(), ...paths])]);
+    rebuild();
+    vscode.window.showInformationMessage(L('No overlap warning for {0} file(s) any more. "Warn about overlapping edits for every file again" turns them back on.', paths.length));
+  };
+  if (pick.all) return mute(files.map((f) => f.path));
+  const compare = L('Compare both changes');
+  const stop = L("Don't warn for this file");
+  const act = await vscode.window.showQuickPick([compare, stop], { placeHolder: path.basename(pick.f.path) });
+  if (act === compare) {
+    const other = [...pick.f.overlap].sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
+    return openOverlapCompare(pick.f.path, sid, other.sid);
+  }
+  if (act === stop) return mute([pick.f.path]);
+  return undefined;
 }
 
 // 두 세션이 각각 그 파일에 한 변경을 비교 창 두 개로 연다
@@ -2529,6 +2560,7 @@ function sessionRow(s, tabs, team) {
 function sessionsPayload() {
   const strings = {
     showChanges: L('Show changed files'), review: L('Review all changes'), newSession: L('New session'), active: L('Open'),
+    newSessionTip: cfg().newSessionTool === 'codex' ? L('New Codex chat (setting newSessionTool chooses Claude Code or Codex)') : L('New Claude Code session (setting newSessionTool chooses Claude Code or Codex)'),
     // "열린 세션" = 지금 프로세스가 떠 있는 세션(작업 중·기다림·쉼). 작업 중인 것만 세는 숫자가 아니다
     // 숫자는 화면 쪽에서 채운다 → 자리표시자를 그대로 넘겨 번역 함수가 건드리지 않게 한다
     activeTip: L('Show only sessions that are open right now (working, waiting or idle). The number counts this folder: {0}. Other folders: {1}.', '{0}', '{1}'),
@@ -2536,7 +2568,7 @@ function sessionsPayload() {
     archive: L('Archive'), unarchive: L('Restore from archive'), archivedTitle: L('Archived'), archiveRule: L('Choose when sessions move to Archived'),
     loadChanges: L("Load this session's changed files"),
     rename: L('Rename session'),
-    overlapTip: L('{0} file(s) here were also changed by another session', '{0}'),
+    overlapTip: L('{0} file(s) here were also changed by another session. Click to compare or stop the warning.', '{0}'),
     searchInside: L('Press Enter to search inside conversations'),
     boardPc: L('Open the phone board in this computer\'s browser'),
     otherFolders: L('Other folders'), worktreeTip: L('Runs in a git worktree: {0}', '{0}'),
@@ -2628,7 +2660,8 @@ class SessionsWebview {
       if (m.type === 'ready') { this.ready = true; rebuildSessions(); }
       else if (m.type === 'open' && typeof m.sid === 'string') openClaudeSession(m.sid);
       else if (m.type === 'reveal' && typeof m.sid === 'string') revealSession(m.sid);
-      else if (m.type === 'new') newClaudeSession();
+      else if (m.type === 'new') newSession();
+      else if (m.type === 'overlap' && typeof m.sid === 'string') showOverlaps(m.sid);
       else if (m.type === 'review' && typeof m.sid === 'string') openSessionChanges(m.sid);
       else if (m.type === 'archive' && typeof m.sid === 'string') setArchived(m.sid, true);
       else if (m.type === 'unarchive' && typeof m.sid === 'string') setArchived(m.sid, false);
@@ -2734,6 +2767,8 @@ function sessionsHtml(webview) {
   .gname { color: var(--vscode-foreground); font-weight: 600; opacity: 0.85; }
   .gcount { flex-shrink: 0; min-width: 18px; padding: 0 6px; font-size: 11px; line-height: 17px; text-align: center; border-radius: 9px; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
   .tag.warn { color: var(--vscode-editorWarning-foreground, #cca700); background: transparent; border: 1px solid var(--vscode-editorWarning-foreground, #cca700); }
+  button.tag.warn { font: inherit; font-size: 10.5px; line-height: 13px; cursor: pointer; }
+  button.tag.warn:hover { background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 15%, transparent); }
   .tag.wt { color: var(--vscode-descriptionForeground); background: transparent; border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35)); }
   .gdesc { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .bell { width: 8px; height: 8px; border-radius: 50%; background: var(--vscode-charts-blue); flex-shrink: 0; }
@@ -2842,7 +2877,7 @@ function sessionsHtml(webview) {
       // 좁은 옆 창에서는 대장 줄의 다른 역할을 배지 설명으로만(제목 자리를 남긴다). 보드에는 둘 다 나온다
       + (r.role && !r.lead ? '<span class="tag role' + (r.roleFromBoard ? ' board' : '') + '" title="' + esc(r.roleFromBoard ? strings.roleFromBoard : strings.setRole) + '">' + esc(r.role) + '</span>' : '')
       + (r.codex ? '<span class="tag">Codex</span>' : '')
-      + (r.overlap ? '<span class="tag warn" title="' + esc(String(strings.overlapTip || '').replace('{0}', r.overlap)) + '">⚠ ' + r.overlap + '</span>' : '')
+      + (r.overlap ? '<button class="tag warn" data-act="overlap" data-sid="' + esc(r.sid) + '" title="' + esc(String(strings.overlapTip || '').replace('{0}', r.overlap)) + '">⚠ ' + r.overlap + '</button>' : '')
       + (inArchive && r.folder ? '<span class="tag">' + esc(r.folder) + '</span>' : '')
       + (r.worktree ? '<span class="tag wt" title="' + esc(String(strings.worktreeTip || '').replace('{0}', r.worktree)) + '">worktree</span>' : '')
       + '<span class="meta">' + esc(r.meta) + '</span>' + acts + '</div>' + sub + '</div>';
@@ -2897,7 +2932,7 @@ function sessionsHtml(webview) {
     btnBoardPc.hidden = !p.phone;
     if (p.phone) { btnBoardPc.title = strings.boardPc || ''; btnBoardPc.setAttribute('aria-label', strings.boardPc || ''); }
     document.getElementById('lblNew').textContent = strings.newSession || '';
-    btnNew.title = strings.newSession || '';
+    btnNew.title = strings.newSessionTip || strings.newSession || '';
     requestAnimationFrame(fitBar); // "열린 세션 · N" 글자 등 이 그리기에서 바뀌는 것까지 다 들어간 뒤에 잰다
     btnSearch.title = strings.search || '';
     btnSearch.setAttribute('aria-label', strings.search || '');
@@ -3155,6 +3190,23 @@ function takeOpenRequests() {
     try { fs.unlinkSync(mine); } catch { /* 없음 */ }
     openClaudeSession(r.sid);
   }
+}
+
+// 세션 창의 "+ 새 세션": 설정 newSessionTool로 고른 도구(Claude Code 또는 Codex)의 새 대화
+function newSession() {
+  return cfg().newSessionTool === 'codex' ? newCodexSession() : newClaudeSession();
+}
+
+// Codex의 새 대화: Codex 확장(openai.chatgpt)의 "New Codex Agent"(새 편집기 탭), 안 되면 Codex 옆 창의 새 대화,
+// 확장이 없으면 작업 폴더 터미널의 Codex CLI. 확장 명령은 공개 문서가 없는 내부 명령이라 판이 바뀌면 다를 수 있다(26.1111 기준)
+async function newCodexSession() {
+  const has = vscode.extensions && vscode.extensions.getExtension && vscode.extensions.getExtension('openai.chatgpt');
+  if (has) {
+    for (const cmd of ['chatgpt.newCodexPanel', 'chatgpt.newChat']) {
+      try { await vscode.commands.executeCommand(cmd); return; } catch { /* 다음 방법 */ }
+    }
+  }
+  return openCodexTerminal();
 }
 
 // Claude 세션 목록의 "+ New session"과 같은 동작(새 탭에 새 대화). 내부 명령이라 판이 바뀌면 다를 수 있다.

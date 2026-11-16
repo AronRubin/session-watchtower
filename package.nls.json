@@ -70,5 +70,8 @@
   "config.phoneBoardLabel": "Name shown at the top of the phone board. Empty = this computer's name.",
   "config.phoneBoardPushDelay": "Seconds a session must wait for you before the phone gets a notification (no content, just a signal). 0 turns notifications off.",
   "command.phoneBoardToggle": "Phone board: turn on or off",
-  "command.phoneBoardRevoke": "Phone board: disconnect all phones and browsers"
+  "command.phoneBoardRevoke": "Phone board: disconnect all phones and browsers",
+  "config.newSessionTool": "Which tool the \"+ New session\" button of the Sessions view opens.",
+  "config.newSessionTool.claude": "Claude Code: a new conversation in a tab.",
+  "config.newSessionTool.codex": "Codex: a new Codex chat (the Codex extension, or the Codex CLI in a terminal when the extension is not installed)."
 }

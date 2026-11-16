@@ -170,6 +170,25 @@ test('세션을 누르면 Claude 대화 열기, 새 세션 열기', async () => 
   await waitFor(() => stub.calls.find((c) => c[0] === 'claude-vscode.editor.open' && c.length === 1), '새 세션');
 });
 
+test('새 세션 단추: 설정 newSessionTool이 codex면 Codex 새 대화(확장 있으면 확장, 없으면 터미널의 Codex CLI)', async () => {
+  assert.match(web.lastPayload().strings.newSessionTip, /^New Claude Code session/, '기본은 Claude Code');
+  stub.changeConfig('newSessionTool', 'codex');
+  await waitFor(() => /^New Codex chat/.test(web.lastPayload().strings.newSessionTip || ''), '단추 설명이 Codex로');
+  stub.state.installedExtensions = ['openai.chatgpt'];
+  stub.calls.length = 0;
+  web.send({ type: 'new' });
+  await waitFor(() => stub.calls.find((c) => c[0] === 'chatgpt.newCodexPanel'), 'Codex 확장의 새 대화');
+  assert.ok(!stub.calls.some((c) => c[0] === 'claude-vscode.editor.open'), 'Claude는 열지 않는다');
+  stub.state.installedExtensions = [];
+  ext._test.setCodexCli(true);
+  stub.calls.length = 0;
+  web.send({ type: 'new' });
+  const term = await waitFor(() => stub.calls.find((c) => c[0] === 'terminal'), '확장이 없으면 터미널의 Codex');
+  assert.deepStrictEqual([term[1].sent, term[1].opts.cwd], [['codex'], project]);
+  stub.changeConfig('newSessionTool', 'claude');
+  await waitFor(() => /^New Claude Code session/.test(web.lastPayload().strings.newSessionTip || ''), '되돌림');
+});
+
 test('다른 폴더 세션: 그 폴더 창을 앞으로(없으면 물어보고 새 창), 그 창이 요청을 받아 대화를 연다', async () => {
   const storage = stub.context.globalStorageUri.fsPath;
   const winDir = path.join(storage, 'windows');

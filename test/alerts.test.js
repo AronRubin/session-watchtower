@@ -118,6 +118,19 @@ test('겹침: 다른 세션이 고친 파일을 고치면 표시하고 한 번 �
   // "두 변경 비교": 두 세션의 변경을 비교 창 두 개로
   stub.changeConfig('overlapIgnore', []);
   await waitFor(() => /^⚠/.test(desc(SID_SUB, 'shared.js')), '패턴 해제');
+  // 세션 줄의 ⚠ 표를 누르면 겹친 파일 목록: 파일을 골라 경고를 끄면 표가 줄고, 다시 켜기로 돌아온다
+  assert.match(web.view.webview.html, /button\.tag\.warn/, '⚠ 표는 누를 수 있는 단추');
+  stub.calls.length = 0;
+  stub.state.pick = (items) => (items[0] && items[0].all ? items.find((i) => i.f && /shared\.js$/.test(i.f.path)) : items.find((i) => i === "Don't warn for this file"));
+  web.send({ type: 'overlap', sid: SID_SUB });
+  await waitFor(() => !/⚠/.test(desc(SID_SUB, 'shared.js')), '⚠ 표에서 고른 파일은 경고 끔');
+  const listed = stub.calls.find((c) => c[0] === 'pick');
+  assert.match(listed[1][0].label, /^Stop warning for these \d+ file\(s\)$/, '맨 위에 모두 끄기');
+  assert.ok(listed[1].some((i) => i.f && i.description === 'also changed by "Tidier"'), '같이 고친 세션 이름');
+  assert.ok(stub.calls.some((c) => c[0] === 'info' && /No overlap warning for 1 file\(s\) any more/.test(c[1])), '다시 켜는 법을 알린다');
+  stub.state.pick = undefined;
+  await stub.commands.get('claudeSessionChanges.resetOverlapIgnore')();
+  await waitFor(() => /^⚠/.test(desc(SID_SUB, 'shared.js')), '다시 켜기');
   stub.calls.length = 0;
   stub.state.answer = (m, b) => (/third/.test(m) ? b[0] : undefined);
   const third = path.join(project, 'src', 'third.js');

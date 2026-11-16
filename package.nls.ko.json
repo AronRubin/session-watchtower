@@ -70,5 +70,8 @@
   "config.phoneBoardLabel": "휴대폰 보드 위쪽에 보이는 이름. 비어 있으면 이 컴퓨터 이름.",
   "config.phoneBoardPushDelay": "세션이 이 시간(초) 동안 답을 기다리면 휴대폰에 알림(내용 없는 신호)을 보냅니다. 0이면 알림을 끕니다.",
   "command.phoneBoardToggle": "휴대폰 보드: 켜기·끄기",
-  "command.phoneBoardRevoke": "휴대폰 보드: 연결된 휴대폰·브라우저 모두 끊기"
+  "command.phoneBoardRevoke": "휴대폰 보드: 연결된 휴대폰·브라우저 모두 끊기",
+  "config.newSessionTool": "세션 창의 \"+ 새 세션\" 단추가 여는 도구.",
+  "config.newSessionTool.claude": "Claude Code: 탭에 새 대화.",
+  "config.newSessionTool.codex": "Codex: 새 Codex 대화(Codex 확장, 확장이 없으면 터미널의 Codex CLI)."
 }

@@ -68,7 +68,7 @@ One row per session, newest conversation first, in the same colors as Claude Cod
 
 Under a working or waiting session a second line shows **what it is doing now** (*Running: npm test*, *Editing README.md*, *2 subagents working*) and **how much it changed** (`+142 −38` with a small green and red bar). A `⚠ 2` tag means two of its files were also changed by another session.
 
-- **Click a row** to open that conversation in Claude Code. **New session** starts a new one.
+- **Click a row** to open that conversation in Claude Code. **New session** starts a new one: a Claude Code conversation, or a Codex chat when the setting `newSessionTool` is `codex` (the Codex extension's new agent, or the Codex CLI in a terminal when the extension is not installed).
 - **Open · 5** filters the list to sessions that are open right now (working, waiting or idle). The number counts this folder.
 - **The magnifier** filters by title. Press Enter in the box to search inside conversations instead.
 - **The ? button** explains every color.
@@ -194,7 +194,7 @@ About the overlap warning:
 
 - It only uses changes that are certain (edit tools, recorded shell changes, Codex patches), not guesses.
 - It stays quiet when the other session is closed and its change is already committed: that is ordinary work in sequence, not a clash.
-- Files that several sessions share on purpose can be silenced one by one from the notification, or with glob patterns in `overlapIgnore`. Claude Code's memory folder is ignored by default.
+- Files that several sessions share on purpose can be silenced one by one from the notification, from the **⚠ badge** on the session row (click it to list the files, compare both changes or stop the warning for one or all of them), or with glob patterns in `overlapIgnore`. *Warn about overlapping edits for every file again* turns them back on. Claude Code's memory folder is ignored by default.
 - It warns after the fact, a few seconds after the change. It cannot stop an edit.
 
 Each notification is shown once per event and only for sessions of the folder open in this window, so several windows do not repeat each other. They also work while the Session Watchtower side bar is hidden: as long as a session is working in this folder, its log is read every few seconds in the background.
@@ -385,6 +385,7 @@ All settings start with `claudeSessionChanges.`
 | `notifyWaiting` | true | Notify when a session in this folder starts waiting for you. |
 | `notifyOverlap` | true | Notify when a session changes a file that another session also changed. |
 | `overlapIgnore` | Claude's memory folder | Glob patterns of files that never get an overlap warning. |
+| `newSessionTool` | claude | What **New session** opens: `claude` (Claude Code) or `codex` (Codex). |
 | `notifyStuckMinutes` | 10 | Notify when a working session has written nothing new for this many minutes (0 = off). |
 | `explorerMarks` | true | Mark the file a session is editing right now in the Explorer and on editor tabs. |
 | `boardPageSize` | 20 | Rows per page in Instructions and results on group boards. |

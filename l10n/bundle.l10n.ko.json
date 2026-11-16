@@ -152,7 +152,7 @@
   "Another session also changed this file ({0}). Check that the two changes do not clash.": "다른 세션도 이 파일을 고쳤습니다({0}). 두 변경이 부딪히지 않는지 확인하세요.",
   "1 subagent working": "하위 에이전트 1개 작업 중",
   "{0} subagents working": "하위 에이전트 {0}개 작업 중",
-  "{0} file(s) here were also changed by another session": "이 세션의 파일 {0}개를 다른 세션도 고쳤습니다",
+  "{0} file(s) here were also changed by another session. Click to compare or stop the warning.": "여기 파일 {0}개는 다른 세션도 고쳤습니다. 누르면 비교하거나 경고를 끌 수 있습니다.",
   "Press Enter to search inside conversations": "Enter를 누르면 대화 내용에서 찾습니다",
   "\"{0}\" has been working for {1} minutes without writing anything new. It may be stuck.": "\"{0}\" 세션이 작업 중인데 {1}분째 새 기록이 없습니다. 멈췄을 수 있습니다.",
   "Could not save the list of ignored files: {0}": "알리지 않을 파일 목록을 저장하지 못했습니다: {0}",
@@ -441,5 +441,10 @@
   "Disconnect all": "모두 끊기",
   "Disconnect all {0} connected phones and browsers? Each needs a new link to connect again.": "연결된 휴대폰·브라우저 {0}개를 모두 끊을까요? 다시 연결하려면 각각 새 링크가 필요합니다.",
   "Disconnected {0} device(s).": "{0}개를 끊었습니다.",
-  "Could not make a link: {0}": "링크를 만들지 못했습니다: {0}"
+  "Could not make a link: {0}": "링크를 만들지 못했습니다: {0}",
+  "New Codex chat (setting newSessionTool chooses Claude Code or Codex)": "새 Codex 대화 (설정 newSessionTool에서 Claude Code·Codex를 고릅니다)",
+  "New Claude Code session (setting newSessionTool chooses Claude Code or Codex)": "새 Claude Code 세션 (설정 newSessionTool에서 Claude Code·Codex를 고릅니다)",
+  "Stop warning for these {0} file(s)": "이 파일 {0}개 모두 경고 안 함",
+  "Files that another session also changed": "다른 세션도 고친 파일",
+  "No overlap warning for {0} file(s) any more. \"Warn about overlapping edits for every file again\" turns them back on.": "파일 {0}개는 이제 겹침 경고를 하지 않습니다. 다시 켜려면 명령 \"모든 파일에 겹침 경고 다시 켜기\"를 쓰세요."
 }
