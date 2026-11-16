@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.32.1
+
+- **The phone board speaks English.** Its pages, the connection screens, error messages and phone notifications are in English unless the browser's language is Korean, and the board's settings have a language switch (automatic, 한국어, English). Copied from session-board e36f672. Session titles and conversations stay as written.
+
 ## 0.32.0
 
 - **The lead checks the team documents.** The lead session request and the lead's role note now ask the lead to look for a plan, a design, a development checklist and a test checklist in the project (a file with another name that does the same job counts) and to recommend creating only the missing ones: once, not for a small change, never again after you say no, and only after you approve. Watchtower itself does not judge by file names.

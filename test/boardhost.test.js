@@ -72,6 +72,9 @@ test('켜기: 127.0.0.1에만 열고, 연결 안 된 기기는 막고, 연결 �
   assert.strictEqual(first.status, 401, '연결 안 된 기기는 막는다');
   assert.match(first.headers['content-security-policy'], /default-src 'none'/);
   assert.strictEqual((await get(port, '/api/state')).status, 401);
+  // 연결 화면은 브라우저 언어를 따른다(영어·한국어)
+  assert.match((await get(port, '/', { 'Accept-Language': 'en-US,en;q=0.9' })).body, /Connection needed/);
+  assert.match((await get(port, '/', { 'Accept-Language': 'ko-KR,ko;q=0.9' })).body, /연결이 필요합니다/);
 
   const { code } = bh.pairCode(stateDir);
   const paired = await get(port, '/pair?c=' + code);

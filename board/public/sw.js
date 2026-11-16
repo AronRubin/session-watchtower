@@ -21,16 +21,37 @@ async function prefs() {
   }
 }
 
+// 알림 글의 영어판. 언어는 화면에서 고른 것(페이지가 적어 둔 prefs.lang) → 브라우저 언어 → 한국어 순서
+const EN = {
+  '세션 보드': 'Session Board',
+  '답을 기다리는 세션이 있습니다.': 'A session is waiting for your answer.',
+  '시험 알림입니다. 이 기기로 알림이 잘 옵니다.': 'This is a test notification. Notifications reach this device.',
+  '기다리던 세션은 그 사이에 끝났습니다.': 'The waiting session finished in the meantime.',
+  '세션': 'Session',
+  '{0} 외 {1}개 · 답을 기다림': '{0} and {1} more · waiting for your answer',
+  '{0} · 답을 기다림': '{0} · waiting for your answer',
+  '답을 기다리는 세션 {0}개': 'Sessions waiting for your answer: {0}',
+};
+function langOf(pf) {
+  if (pf && (pf.lang === 'ko' || pf.lang === 'en')) return pf.lang;
+  const n = self.navigator && self.navigator.language;
+  return n ? (/^ko\b/i.test(n) ? 'ko' : 'en') : 'ko';
+}
+
 async function show() {
-  let title = '세션 보드';
-  let body = '답을 기다리는 세션이 있습니다.';
+  // 설정은 먼저 읽는다(보드에 못 닿아 기본 글자로 띄울 때도 고른 언어로)
+  const pf = await prefs();
+  const L = langOf(pf) === 'en' ? (ko) => EN[ko] || ko : (ko) => ko;
+  const T = (ko, ...a) => L(ko).replace(/\{(\d)\}/g, (m, i) => (a[i] != null ? String(a[i]) : m));
+  let title = T('세션 보드');
+  let body = T('답을 기다리는 세션이 있습니다.');
   let tag = 'sb-wait';
   let url = '/';
   try {
-    const [st, last, pf] = await Promise.all([getJson('/api/state'), getJson('/api/push/last'), prefs()]);
-    if (st && st.label) title = '세션 보드 · ' + st.label;
+    const [st, last] = await Promise.all([getJson('/api/state'), getJson('/api/push/last')]);
+    if (st && st.label) title = T('세션 보드') + ' · ' + st.label;
     if (last && last.kind === 'test' && Date.now() - last.at < 120000) {
-      body = '시험 알림입니다. 이 기기로 알림이 잘 옵니다.';
+      body = T('시험 알림입니다. 이 기기로 알림이 잘 옵니다.');
       tag = 'sb-test';
     } else if (st) {
       // 화면과 같게 12시간 넘은 대기는 빼고 센다(새로 생긴 대기가 아니므로). 전부 오래됐으면 그대로
@@ -38,16 +59,17 @@ async function show() {
       const fresh = all.filter((a) => Date.now() - (a.since || 0) < 12 * 3600e3);
       const list = fresh.length ? fresh : all;
       const n = list.length;
-      if (!n) body = '기다리던 세션은 그 사이에 끝났습니다.';
+      if (!n) body = T('기다리던 세션은 그 사이에 끝났습니다.');
       else {
         // 가장 최근에 기다리기 시작한 세션을 연다
         url = '/#s=' + encodeURIComponent(list[0].sid);
         if (pf.names) {
           // 사용자가 켠 경우에만 세션 이름을 보인다(잠금 화면에도 보임)
-          if (list[0].host) title = '세션 보드 · ' + list[0].host;
-          body = String(list[0].title || '세션').slice(0, 80) + (n > 1 ? ` 외 ${n - 1}개` : '') + ' · 답을 기다림';
+          if (list[0].host) title = T('세션 보드') + ' · ' + list[0].host;
+          const name = String(list[0].title || T('세션')).slice(0, 80);
+          body = n > 1 ? T('{0} 외 {1}개 · 답을 기다림', name, n - 1) : T('{0} · 답을 기다림', name);
         } else {
-          body = `답을 기다리는 세션 ${n}개`;
+          body = T('답을 기다리는 세션 {0}개', n);
         }
       }
     }

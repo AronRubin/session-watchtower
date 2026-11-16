@@ -15,6 +15,7 @@ const { createStore } = require('./auth');
 const { createPush, createNotifier } = require('./push');
 const { createRemotes, mergeState, splitSid, linkRemote } = require('./remotes');
 const { discover } = require('./discover');
+const I18N = require('./i18n');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
 
@@ -210,19 +211,19 @@ function createBoardServer(cfg, opts = {}) {
     let body;
     try { body = await readBody(req); } catch { return json(res, 400, { error: 'bad body' }); }
     const target = found.data && found.data.devices.find((x) => x.board && x.url === body.url);
-    if (!target) return json(res, 404, { error: '찾은 목록에 없는 주소입니다. 다시 찾기를 눌러 주세요' });
+    if (!target) return json(res, 404, { error: I18N.tr(I18N.langOf(req), '찾은 목록에 없는 주소입니다. 다시 찾기를 눌러 주세요') });
     let code = String(body.code || '').trim();
     const inLink = /[?&]c=([A-Za-z0-9]{6,20})/.exec(code);
     if (inLink) code = inLink[1];
     code = code.replace(/[\s-]/g, '');
-    if (!/^[A-Za-z0-9]{6,20}$/.test(code)) return json(res, 400, { error: '코드 모양이 아닙니다' });
+    if (!/^[A-Za-z0-9]{6,20}$/.test(code)) return json(res, 400, { error: I18N.tr(I18N.langOf(req), '코드 모양이 아닙니다') });
     try {
       const r = await linkRemote(cfg.stateDir, target.url + '/pair?c=' + code, cfg.label, { fetch: opts.fetch });
       found.at = 0; // 붙인 표시가 바로 보이게 다음 찾기는 새로
       log.info(`remote-link: ${r.name} (${r.url}) 합침`);
       return json(res, 200, { id: r.id, name: r.name, replaced: r.replaced });
     } catch (e) {
-      return json(res, 400, { error: String((e && e.message) || e) });
+      return json(res, 400, { error: I18N.tr(I18N.langOf(req), String((e && e.message) || e)) });
     }
   }
 
@@ -243,9 +244,13 @@ function createBoardServer(cfg, opts = {}) {
   }
 
   // withForm: 연결 코드 입력칸을 붙인다. 아이폰 홈 화면 앱처럼 주소줄이 없는 곳에서도 코드만 쳐서 연결하게
-  function page(title, msg, withForm) {
-    const form = withForm ? '<form class="codeform" method="get" action="/pair"><label for="c">연결 코드 (링크를 통째로 붙여 넣어도 됩니다)</label><input id="c" name="c" required autocomplete="one-time-code" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="300" placeholder="예: K7Q2XPMB4D"><button type="submit">연결</button></form>' : '';
-    return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><script src="/theme.js"></script><link rel="stylesheet" href="/app.css"></head><body class="plain"><main class="msgpage"><h1>${title}</h1><p>${msg}</p>${form}</main></body></html>`;
+  // lang: 'ko' | 'en'(lib/i18n.js의 langOf). 글은 한국어로 넘기고 여기서 그 언어로 바꾼다
+  function page(lang, title, msg, withForm) {
+    const L = (ko) => I18N.tr(lang, ko);
+    title = L(title);
+    msg = L(msg);
+    const form = withForm ? `<form class="codeform" method="get" action="/pair"><label for="c">${L('연결 코드 (링크를 통째로 붙여 넣어도 됩니다)')}</label><input id="c" name="c" required autocomplete="one-time-code" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="300" placeholder="${L('예: K7Q2XPMB4D')}"><button type="submit">${L('연결')}</button></form>` : '';
+    return `<!doctype html><html lang="${lang === 'en' ? 'en' : 'ko'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><script src="/theme.js"></script><link rel="stylesheet" href="/app.css"></head><body class="plain"><main class="msgpage"><h1>${title}</h1><p>${msg}</p>${form}</main></body></html>`;
   }
   // 코드 입력칸이 있는 쪽만 같은 주소(/pair)로 보내는 것을 허락한다(나머지 화면은 form-action 'none' 그대로)
   const FORM_CSP = { 'Content-Security-Policy': SEC_HEADERS['Content-Security-Policy'].replace("form-action 'none'", "form-action 'self'") };
@@ -264,13 +269,24 @@ function createBoardServer(cfg, opts = {}) {
     // 다른 보드가 사설망에서 보드를 찾을 때 알아보도록 표시와 이름을 붙인다(같은 사설망 기기만 닿음)
     if (p === '/healthz') return send(res, 200, 'ok', null, { 'X-Session-Board': '1', 'X-Session-Board-Label': encodeURIComponent(cfg.label) });
 
+    // 앱 이름(홈 화면에 붙일 때 쓰는 이름)은 언어에 맞춘다
+    if (p === '/manifest.webmanifest') {
+      return fs.readFile(path.join(PUBLIC, 'manifest.webmanifest'), 'utf8', (err, text) => {
+        if (err) return send(res, 404, '없음');
+        let body = text;
+        if (I18N.langOf(req) === 'en') {
+          try { body = JSON.stringify({ ...JSON.parse(text), name: 'Session Board', short_name: 'Session Board', lang: 'en' }, null, 2); } catch { /* 원본 그대로 */ }
+        }
+        return send(res, 200, body, 'application/manifest+json', { 'Cache-Control': 'no-cache', Vary: 'Accept-Language, Cookie' });
+      });
+    }
     if (STATIC[p]) {
       const [f, type] = STATIC[p];
       return fs.readFile(path.join(PUBLIC, f), (err, buf) => (err ? send(res, 404, '없음') : send(res, 200, buf, type, { 'Cache-Control': 'no-cache' })));
     }
 
     if (p === '/pair') {
-      if (!pairAllowed()) return send(res, 429, page('잠시 뒤에 다시', '시도가 너무 많습니다. 10분 뒤에 새 코드로 다시 해 주세요.'), 'text/html; charset=utf-8');
+      if (!pairAllowed()) return send(res, 429, page(I18N.langOf(req), '잠시 뒤에 다시', '시도가 너무 많습니다. 10분 뒤에 새 코드로 다시 해 주세요.'), 'text/html; charset=utf-8');
       // 입력칸에 링크 통째(https://…/pair?c=코드)나 띄어 쓴 코드를 넣어도 코드만 꺼낸다
       let code = String(url.searchParams.get('c') || '').trim();
       const inLink = /[?&]c=([A-Za-z0-9]{6,20})/.exec(code);
@@ -279,10 +295,10 @@ function createBoardServer(cfg, opts = {}) {
       // 안드로이드 앱 안 브라우저(WebView, 사용자 에이전트에 "; wv)")에서 열면 연결이 그 앱 안에만 남아 Chrome에서는 다시 막힌다.
       // 일회용 코드를 쓰지 않고 Chrome에서 열라고 안내한다(11-13 휴대폰에서 실제로 겪음)
       if (/; wv\)/.test(String(req.headers['user-agent'] || ''))) {
-        return send(res, 200, page('Chrome에서 열어 주세요', '앱 안의 브라우저에서는 연결이 Chrome에 저장되지 않습니다. 이 주소를 복사해 Chrome 주소창에 붙여 넣어 열어 주세요. 코드는 아직 쓰지 않았으니 같은 링크를 그대로 쓰면 됩니다.'), 'text/html; charset=utf-8');
+        return send(res, 200, page(I18N.langOf(req), 'Chrome에서 열어 주세요', '앱 안의 브라우저에서는 연결이 Chrome에 저장되지 않습니다. 이 주소를 복사해 Chrome 주소창에 붙여 넣어 열어 주세요. 코드는 아직 쓰지 않았으니 같은 링크를 그대로 쓰면 됩니다.'), 'text/html; charset=utf-8');
       }
       if (!/^[A-Za-z0-9]{6,20}$/.test(code) || !store.consumePairCode(code)) {
-        return send(res, 403, page('연결 코드가 맞지 않습니다', '코드가 틀렸거나 10분이 지났거나 이미 쓴 코드입니다. 서버에서 <code>node cli.js pair</code>로 새 코드를 받아 아래에 넣어 주세요.', true), 'text/html; charset=utf-8', FORM_CSP);
+        return send(res, 403, page(I18N.langOf(req), '연결 코드가 맞지 않습니다', '코드가 틀렸거나 10분이 지났거나 이미 쓴 코드입니다. 서버에서 <code>node cli.js pair</code>로 새 코드를 받아 아래에 넣어 주세요.', true), 'text/html; charset=utf-8', FORM_CSP);
       }
       const ua = String(req.headers['user-agent'] || '').slice(0, 120);
       const token = store.issueDevice(ua);
@@ -293,8 +309,13 @@ function createBoardServer(cfg, opts = {}) {
     const dev = authed(req);
 
     if (p === '/' || p === '/index.html') {
-      if (!dev) return send(res, 401, page('연결이 필요합니다', '이 기기는 아직 연결되지 않았습니다. 서버에서 <code>node cli.js pair</code>로 받은 링크를 이 기기에서 열거나, 거기 나온 코드를 아래에 넣어 주세요. VS Code를 쓰면 Session Watchtower 확장의 휴대폰 단추로도 연결 링크·QR·코드를 만들 수 있습니다.', true), 'text/html; charset=utf-8', FORM_CSP);
-      return fs.readFile(path.join(PUBLIC, 'index.html'), (err, buf) => (err ? send(res, 500, '화면 파일 없음') : send(res, 200, buf, 'text/html; charset=utf-8')));
+      if (!dev) return send(res, 401, page(I18N.langOf(req), '연결이 필요합니다', '이 기기는 아직 연결되지 않았습니다. 서버에서 <code>node cli.js pair</code>로 받은 링크를 이 기기에서 열거나, 거기 나온 코드를 아래에 넣어 주세요. VS Code를 쓰면 Session Watchtower 확장의 휴대폰 단추로도 연결 링크·QR·코드를 만들 수 있습니다.', true), 'text/html; charset=utf-8', FORM_CSP);
+      // 첫 글자(제목·불러오는 중)도 언어에 맞춘다. 나머지 글은 app.js가 고른다
+      return fs.readFile(path.join(PUBLIC, 'index.html'), 'utf8', (err, html) => {
+        if (err) return send(res, 500, '화면 파일 없음');
+        if (I18N.langOf(req) === 'en') html = html.replace('<html lang="ko">', '<html lang="en">').replace('<title>세션 보드</title>', '<title>Session Board</title>').replace('불러오는 중…', 'Loading…');
+        return send(res, 200, html, 'text/html; charset=utf-8', { Vary: 'Accept-Language, Cookie' });
+      });
     }
 
     if (!p.startsWith('/api/')) return send(res, 404, '없음');
@@ -302,7 +323,7 @@ function createBoardServer(cfg, opts = {}) {
 
     if (pushPost) return void handlePushPost(req, res, p, dev).catch((e) => { log.error(e); if (!res.headersSent) json(res, 500, { error: 'server error' }); });
     if (p === '/api/discover') {
-      findBoards(url.searchParams.get('fresh') === '1').then((r) => json(res, 200, r)).catch((e) => json(res, 503, { error: String((e && e.message) || e) }));
+      findBoards(url.searchParams.get('fresh') === '1').then((r) => json(res, 200, r)).catch((e) => json(res, 503, { error: I18N.tr(I18N.langOf(req), String((e && e.message) || e)) }));
       return;
     }
     if (remoteLinkPost) return void handleRemoteLink(req, res).catch((e) => { log.error(e); if (!res.headersSent) json(res, 500, { error: 'server error' }); });
