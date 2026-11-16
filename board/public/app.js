@@ -161,6 +161,7 @@
     folder: 'M3 7a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z',
     archive: 'M3 5h18v4H3zM5 9v10h14V9M10 13h4',
     commit: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 12h6M15 12h6',
+    gear: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
   };
   function icon(name, cls) {
     const ns = 'http://www.w3.org/2000/svg';
@@ -436,11 +437,17 @@
       add($top, a);
     }
     add($top, el('span', 'sp'));
+    const gear = el('button', 'gearbtn' + (S.drawer ? ' on' : ''));
+    gear.type = 'button';
+    gear.setAttribute('aria-label', '설정');
+    gear.setAttribute('aria-expanded', String(!!S.drawer));
+    add(gear, icon('gear'), el('span', '', '설정'));
+    gear.addEventListener('click', () => { S.drawer = !S.drawer; render(); });
     const live = el('span', 'live');
     live.id = 'live';
     live.setAttribute('role', 'status');
     add(live, el('i'), el('span', 'lt'));
-    add($top, live);
+    add($top, live, gear);
     tick();
   }
   // 1초마다 머리의 "n초 전"과 오래됨 띠만 고친다(화면 전체는 다시 그리지 않음)
@@ -1201,17 +1208,71 @@
   }
 
   // 넓은 화면의 오른쪽 첫 화면: 대기 카드를 여러 칸으로, 아래에 방금 끝남
+  // 넓은 화면(웹)의 첫 화면: 위에 숫자 칸, 대기 카드, 그 아래 "지금 작업 중"과 "방금 끝남"을 나란히
   function renderDash(d) {
     const sec = el('section', 'detail dash');
-    sec.setAttribute('aria-label', '대기와 방금 끝남');
+    sec.setAttribute('aria-label', '전체 상황');
+    const live = d.sections.flatMap((s) => s.sessions);
+    const working = live.filter((x) => x.status === 'work');
+    const stats = el('div', 'dstats');
+    const stat = (n, label, cls) => { const b = el('div', 'dstat' + (cls ? ' ' + cls : '')); add(b, el('b', '', String(n)), el('span', '', label)); return b; };
+    add(stats, stat(freshWaits(d).length, '나를 기다림', 'wait'), stat(working.length, '작업 중', 'work'), stat(d.count.idle, '쉼'), stat(d.recentFiles, `최근 ${WIN_LABEL[d.win] || '24시간'} 바뀐 파일`));
+    add(sec, stats);
     const parts = renderAttention(d);
     const cards = parts.filter((n) => n.classList.contains('wait'));
-    const rest = parts.filter((n) => !n.classList.contains('wait'));
-    add(sec, el('h2', 'dh2', cards.length ? `나를 기다리는 세션 ${cards.length}개` : '지금 나를 기다리는 세션이 없습니다'));
+    const bar = parts.filter((n) => n.classList.contains('waitbar'));
+    const recent = parts.filter((n) => n.classList.contains('recent'));
+    const boxes = parts.filter((n) => n.classList.contains('closedask'));
+    const head = el('div', 'dhead');
+    add(head, el('h2', 'dh2', cards.length ? `나를 기다리는 세션 ${cards.length}개` : '지금 나를 기다리는 세션이 없습니다'), ...bar);
+    add(sec, head);
     if (cards.length) { const grid = el('div', 'cards'); add(grid, ...cards); add(sec, grid); }
-    add(sec, ...rest);
-    add(sec, el('p', 'note left', '왼쪽 목록에서 세션을 누르면 대화와 바뀐 파일이 여기에 나옵니다.'));
+    // 지금 작업 중: 무엇을 하고 있는지 한 줄씩(누르면 그 세션)
+    const wk = el('div', 'dpanel');
+    add(wk, el('h3', '', `지금 작업 중 · ${working.length}`));
+    if (!working.length) add(wk, el('p', 'dempty', '작업 중인 세션이 없습니다.'));
+    for (const x of working.slice(0, 12)) {
+      const r = el('button', 'wrow');
+      r.type = 'button';
+      const t = el('span', 'wt');
+      add(t, el('b', '', x.title), el('span', '', x.activity ? (x.activity.tool || '') + (x.activity.arg ? ' · ' + x.activity.arg : '') : statusText(x)));
+      add(r, el('span', 'dot d-work'), t, el('span', 'el', during(x.since, d.now)));
+      r.addEventListener('click', () => go(x.sid, 'conv'));
+      add(wk, r);
+    }
+    const rc = el('div', 'dpanel');
+    if (recent.length) add(rc, ...recent);
+    else { add(rc, el('h3', '', '방금 끝남 (30분 안)')); add(rc, el('p', 'dempty', '30분 안에 끝난 세션이 없습니다.')); }
+    const row = el('div', 'drow');
+    add(row, wk, rc);
+    add(sec, row);
+    if (boxes.length) { const b = el('div', 'drow'); add(b, ...boxes); add(sec, b); }
+    add(sec, el('p', 'note left', '왼쪽 목록에서 세션을 누르면 대화와 바뀐 파일이 여기에 나옵니다. 단축키: j / k 세션 이동, Esc 닫기'));
     return sec;
+  }
+
+  // 넓은 화면 설정(다른 서버·알림·화면): 머리의 톱니 단추로 여는 오른쪽 서랍
+  S.drawer = false;
+  function settingsDrawer(d) {
+    const box = el('aside', 'drawer');
+    box.setAttribute('aria-label', '설정');
+    const h = el('div', 'drh');
+    add(h, el('h2', '', '설정'));
+    const x = el('button', 'wx');
+    x.type = 'button';
+    x.setAttribute('aria-label', '설정 닫기');
+    add(x, icon('close'));
+    x.addEventListener('click', () => { S.drawer = false; render(); });
+    add(h, x);
+    add(box, h, findBox(), pushRow(), themeSwitch());
+    if (S.hiddenSids.size) {
+      const b = el('button', 'lnk', `숨긴 대기 카드 ${S.hiddenSids.size}개 다시 보이기`);
+      b.type = 'button';
+      b.addEventListener('click', () => unhideAll(d));
+      add(box, b);
+    }
+    add(box, el('p', 'pnote', '읽기 전용 · 10초마다 갱신'));
+    return box;
   }
 
   // 세션을 연 동안 왼쪽 위에 남겨 두는 대기 목록(제목 한 줄씩)
@@ -1234,6 +1295,7 @@
   window.addEventListener('keydown', (e) => {
     if (NARROW.matches || e.altKey || e.ctrlKey || e.metaKey || !S.data) return;
     if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+    if (e.key === 'Escape' && S.drawer) { S.drawer = false; render(); return; }
     if (e.key === 'Escape' && S.sel) { go(null); return; }
     if (e.key !== 'j' && e.key !== 'k') return;
     const order = view(S.data).sections.filter((s) => !S.fold.has(s.id)).flatMap((s) => s.sessions).map((x) => x.sid);
@@ -1544,7 +1606,7 @@
     const wrap = el('div', 'wrap');
     if (wide && !S.sel) {
       // 넓은 화면에서 아무 세션도 안 골랐을 때: 왼쪽은 목록만, 오른쪽 넓은 자리에 대기 카드·방금 끝남
-      add(side, sum, renderList(d));
+      add(side, renderList(d));
       add(wrap, side, renderDash(d));
     } else if (wide) {
       // 세션을 골랐을 때: 왼쪽 위에 대기 세션을 짧은 줄로만, 오른쪽은 세션 내용
@@ -1554,9 +1616,12 @@
       add(side, sum, ...renderAttention(d), renderList(d));
       add(wrap, side, renderDetail(d));
     }
-    add($app, wrap, el('div', 'foot', '읽기 전용 · ' + (d.hostView || d.label) + ' · 10초마다 갱신' + (wide ? ' · 단축키: j / k 세션 이동, Esc 닫기' : '')));
-    if (!S.sel) add($app, findBox(), pushRow(), themeSwitch());
-    if (S.hiddenSids.size && !S.sel) {
+    if (wide) {
+      add($app, wrap);
+      if (S.drawer) add($app, settingsDrawer(d));
+    } else add($app, wrap, el('div', 'foot', '읽기 전용 · ' + (d.hostView || d.label) + ' · 10초마다 갱신'));
+    if (!S.sel && !wide) add($app, findBox(), pushRow(), themeSwitch());
+    if (S.hiddenSids.size && !S.sel && !wide) {
       const f = el('div', 'foot');
       const b = el('button', 'lnk', `숨긴 대기 카드 ${S.hiddenSids.size}개 다시 보이기`);
       b.type = 'button';

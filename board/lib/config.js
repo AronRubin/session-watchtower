@@ -17,7 +17,7 @@ function watchtowerDir(env = process.env, platform = process.platform, exists = 
   return c.find((d) => exists(d)) || c[0];
 }
 
-// "85번 서버=https://a.b.ts.net,다른 이름=https://..." → [{ name, url }]  (https만 받는다)
+// "서버 B=https://b.example.ts.net,다른 이름=https://..." → [{ name, url }]  (https만 받는다)
 function parsePeers(s) {
   return String(s || '').split(',').map((x) => x.trim()).filter(Boolean).map((x) => {
     const i = x.indexOf('=');

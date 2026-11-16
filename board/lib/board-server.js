@@ -372,7 +372,7 @@ function createBoardServer(cfg, opts = {}) {
   });
 
   // 지금 떠 있는 이 보드의 포트·이름을 stateDir/run.json에 적는다(Watchtower가 포트를 훑지 않고 이 보드 하나만 찾게).
-  // 85번처럼 VS Code가 다른 서버 보드를 같은 포트로 전달해 둔 곳에서도 "이 폴더의 보드"를 정확히 찾는다. 꺼지면 지운다
+  // VS Code 원격 창이 다른 서버 보드를 같은 포트로 전달해 둔 컴퓨터에서도 "이 폴더의 보드"를 정확히 찾는다. 꺼지면 지운다
   const runFile = path.join(cfg.stateDir, 'run.json');
   function writeRun(port) {
     try {
