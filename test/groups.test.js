@@ -189,7 +189,7 @@ test('그룹 보드: 기다리는 세션, 세션 현황(커밋 안 한 파일), 
   assert.deepStrictEqual(p.unknown, [path.join(project, 'stray.txt')], '보는 기간 안에 바뀐 것만(30일 된 백업 파일은 뺀다)');
   const out = p.members.find((m) => m.title === 'Outside');
   assert.strictEqual(out.folder, 'other-app');
-  assert.strictEqual(out.canOpen, false, '다른 폴더 세션은 이 창에서 열 수 없다고 알린다');
+  assert.strictEqual(out.canOpen, true, '다른 폴더 세션도 누르면 그 폴더 창에서 연다(0.29.0부터)');
   assert.strictEqual(p.members.find((m) => m.title === 'Watcher').role, 'Watch');
 
   // 지시와 결과: 내가 친 말(최근 것부터) + 세션이 마지막으로 답한 글의 첫 줄. 결정 기록에 쓰는 모양(시각 + 원문 + 세션)으로 복사

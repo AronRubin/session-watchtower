@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.29.0
+
+- **Sessions from other folders open with one click.** Claude Code opens a conversation only in a window with its folder open, so before, clicking a session from another folder only said where to open it. Now it brings up the VS Code window of that folder and that window opens the conversation. When no window has that folder open, Watchtower asks first and then opens it in a new window (on the same remote server for a remote window).
+- The hand-over is a small request file in Watchtower's own storage with the session ID, its folder and the time. Only a window with that folder open takes it, only one window takes it, and a request older than two minutes is dropped, so a conversation never opens in the wrong folder or later by surprise.
+
 ## 0.28.5
 
 - **No dead end on the board's "connection needed" page.** "Also open it in this computer's browser" (was "Open the board here") now opens the board with the current code, so this browser gets connected instead of stopping at the board's "connection needed" page; the panel then says the phone needs a new link.

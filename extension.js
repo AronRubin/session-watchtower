@@ -1196,7 +1196,7 @@ async function copyRoleBrief(groupId, sid) {
   await vscode.env.clipboard.writeText(text);
   const s = sessionBySid(sid);
   const open = L('Open conversation');
-  const canOpen = s && (s.agent === 'codex' ? UUID_RE.test(codexId(s.sid)) : inWorkspace(s));
+  const canOpen = canOpenSession(s);
   const pick = await vscode.window.showInformationMessage(L('Copied the role note for "{0}". Paste it into that session.', s ? s.title : sid.slice(0, 8)), ...(canOpen ? [open] : []));
   if (pick === open) openClaudeSession(sid);
 }
@@ -1590,7 +1590,7 @@ async function boardPayload(id) {
     const row = {
       sid, title: s.title, role, state: s.alive ? st.key : 'off', stateLabel: s.alive ? st.label : L('Off'), now: [subText(s, st), nowText(s, st)].filter(Boolean).join(' · '),
       last: s.lastActivity ? fmtAgo(s.lastActivity) : '', files: files.length, add: files.reduce((a, f) => a + (f.add || 0), 0), del: files.reduce((a, f) => a + (f.del || 0), 0),
-      commits: shas.size, canOpen: s.agent === 'codex' ? UUID_RE.test(codexId(s.sid)) : inWorkspace(s), folder: inWorkspace(s) ? '' : s.project || '', paths: files.map((f) => f.path), uncommitted: [],
+      commits: shas.size, canOpen: canOpenSession(s), folder: inWorkspace(s) ? '' : s.project || '', paths: files.map((f) => f.path), uncommitted: [],
     };
     members.push(row);
     if (s.alive && s.status === 'waiting') {
@@ -1673,7 +1673,7 @@ function boardStrings() {
   return {
     waiting: L('Waiting for you'), noneWaiting: L('No session in this group is waiting for you.'), sessions: L('Sessions'),
     role: L('Role'), session: L('Session'), state: L('State'), now: L('Doing now'), changed: L('Changed'), uncommitted: L('Not committed'), commits: L('Commits'), last: L('Last talk'),
-    setRole: L('Set role'), remove: L('Remove from group'), open: L('Open conversation'), otherFolder: L('From another folder ({0}): open it from a VS Code window with that folder.', '{0}'),
+    setRole: L('Set role'), remove: L('Remove from group'), open: L('Open conversation'), otherFolder: L('From another folder ({0}): click to open it in the VS Code window of that folder.', '{0}'),
     unknownTitle: L('Changes no session log explains (last {0})', '{0}'), unknownTip: L('Uncommitted files in these repositories that changed within the time range but are not in any session log: edited by hand or by another tool. Older uncommitted files (backups, files never added to git) are left out.'),
     said: L('Instructions and results'), foldTip: L('Click to fold or unfold.'), saidTip: L('What you typed to these sessions, newest first, with the first line of each session\'s last answer to it. Messages from other sessions and system notes are left out; the same message sent to several sessions is shown once.'),
     saidNone: L('Nothing yet.'), saidBusy: L('Reading your messages…'), moreTip: L('Click to see the whole text'), openTip: L('Open this session'), prev: L('Previous'), next: L('Next'), first: L('Newest'),
@@ -2287,7 +2287,7 @@ class Provider {
       it.id = 'cg:' + el.key;
       it.description = groupDescription(el.items, true);
       it.iconPath = groupIcon(el.items);
-      it.tooltip = L('{0} session(s) from another folder ({1}). Expand to see them.\nConversations can only be opened from a VS Code window with that folder open.', el.items.length, el.key);
+      it.tooltip = L('{0} session(s) from another folder ({1}). Expand to see them.\nOpening a conversation brings up the VS Code window of that folder and opens it there.', el.items.length, el.key);
       it.contextValue = 'sessionGroup';
       return it;
     }
@@ -2434,12 +2434,12 @@ function onTabsChanged() {
 function sessionRow(s, tabs, team) {
   const st = stateOf(s);
   const codex = s.agent === 'codex';
-  const canOpen = codex ? UUID_RE.test(codexId(s.sid)) : inWorkspace(s);
+  const canOpen = canOpenSession(s);
   const hint = codex
     ? L('Codex session · Click: open it in Codex (or continue it in a terminal) · Buttons on the right: changed files / review all changes')
     : canOpen
       ? L('Click: open the Claude conversation · Buttons on the right: changed files / review all changes')
-      : L('Session from another folder ({0}): open it from a VS Code window with that folder · Buttons on the right: changed files / review all changes', s.project);
+      : L('Session from another folder ({0}): click to open it in the VS Code window of that folder · Buttons on the right: changed files / review all changes', s.project);
   // 제목이 잘리지 않게 오른쪽에는 시간만(상태는 점 색). 사용자가 해야 할 일이 있는 "기다림"만 글자도 붙인다.
   const meta = st.key === 'waiting' ? [st.short, st.time].filter(Boolean).join(' · ') : st.time;
   const m = model.find((x) => x.sid === s.sid);
@@ -2529,7 +2529,7 @@ function sessionsPayload() {
       key,
       desc: groupDescription(items, false),
       waiting: items.some((s) => s.alive && s.status === 'waiting'),
-      tip: L('{0} session(s) from another folder ({1}). Expand to see them.\nConversations can only be opened from a VS Code window with that folder open.', items.length, key),
+      tip: L('{0} session(s) from another folder ({1}). Expand to see them.\nOpening a conversation brings up the VS Code window of that folder and opens it there.', items.length, key),
       rows: items.map(rowOf),
     })),
   };
@@ -2937,9 +2937,7 @@ async function openClaudeSession(arg) {
   if (!sid) return;
   const s = raw.find((x) => x.sid === sid) || { sid, title: sid.slice(0, 8) };
   if (s.agent === 'codex' || sid.startsWith('codex:')) return openCodexSession(s);
-  if (!inWorkspace(s)) {
-    return vscode.window.showInformationMessage(L('"{0}" is a session from another folder ({1}). Open it from the Claude list in a VS Code window with that folder open.', s.title, s.project || s.cwd));
-  }
+  if (!inWorkspace(s)) return handOff(s);
   try {
     await vscode.commands.executeCommand('claude-vscode.editor.open', sid, undefined, undefined, undefined, true, { programmatic: 'honor-preferred-location' });
   } catch (e) {
@@ -2948,6 +2946,124 @@ async function openClaudeSession(arg) {
     } catch {
       vscode.window.showWarningMessage(L('Could not open the Claude conversation: {0}', String((e && e.message) || e)));
     }
+  }
+}
+
+// ---------- 다른 폴더 세션을 그 폴더 창에서 열기 ----------
+// Claude Code는 창에 열린 폴더의 대화만 연다(다른 폴더 대화를 이 창에서 이으면 이 창 폴더에서 일하게 된다).
+// 그래서 다른 폴더 세션을 누르면 그 폴더 창을 앞으로 가져오고(없으면 물어본 뒤 새 창), 그 창의 Watchtower가 요청 파일을 읽어 대화를 연다.
+// 요청 파일에는 세션 ID·작업 폴더·시각·보낸 창·받을 창만 적는다. 받는 창은 그 폴더가 열린 창일 때만, 2분 안의 요청만, 한 창만(이름 바꾸기로 가져감) 연다.
+// 같은 컴퓨터(원격 창이면 같은 서버)의 창끼리 이 확장의 globalStorage 폴더를 같이 쓴다.
+const HANDOFF_MS = 2 * 60 * 1000;
+const WINDOW_STALE_MS = 30 * 60 * 1000; // 창 기록은 10분마다 다시 쓴다. 30분 넘게 그대로면 꺼진 창으로 본다
+let windowEntryAt = 0;
+
+function canOpenSession(s) {
+  if (!s) return false;
+  if (s.agent === 'codex') return UUID_RE.test(codexId(s.sid));
+  return inWorkspace(s) || (!!s.cwd && UUID_RE.test(String(s.sid)));
+}
+
+function handoffDir(name) { return ctx && ctx.globalStorageUri ? path.join(ctx.globalStorageUri.fsPath, name) : null; }
+
+function writeJsonAtomic(file, obj) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = file + '.' + process.pid + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(obj), { mode: 0o600 });
+  fs.renameSync(tmp, file);
+}
+
+// 이 창이 어떤 폴더를 열었는지 적어 둔다(다른 창이 "그 폴더 창"을 찾을 때 본다). 창마다 확장 프로세스가 따로라 pid로 구분한다
+function writeWindowEntry() {
+  const dir = handoffDir('windows');
+  if (!dir) return;
+  const wf = vscode.workspace.workspaceFile;
+  try {
+    writeJsonAtomic(path.join(dir, process.pid + '.json'), {
+      pid: process.pid, at: Date.now(),
+      folders: (vscode.workspace.workspaceFolders || []).map((f) => ({ uri: f.uri.toString(), path: f.uri.fsPath })),
+      workspaceFile: wf && wf.scheme !== 'untitled' ? wf.toString() : null,
+    });
+    windowEntryAt = Date.now();
+  } catch { /* 못 쓰면 다른 창에서 이 창을 못 찾고, 새 창을 열지 물어볼 뿐이다 */ }
+}
+
+function removeWindowEntry() {
+  const dir = handoffDir('windows');
+  if (dir) try { fs.unlinkSync(path.join(dir, process.pid + '.json')); } catch { /* 없음 */ }
+}
+
+const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return !!(e && e.code === 'EPERM'); } };
+
+// cwd를 품은 폴더가 열린 다른 창(가장 안쪽 폴더). 꺼진 창 기록은 지운다
+function windowFor(cwd) {
+  const dir = handoffDir('windows');
+  let names = [];
+  try { names = dir ? fs.readdirSync(dir) : []; } catch { return null; }
+  const norm = (p) => (process.platform === 'win32' ? String(p).toLowerCase() : String(p));
+  const c = norm(cwd);
+  let best = null;
+  for (const n of names) {
+    if (!/^\d+\.json$/.test(n)) continue;
+    const f = path.join(dir, n);
+    let w;
+    try { w = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { continue; }
+    const pid = Number(w && w.pid);
+    if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) continue;
+    if (!pidAlive(pid) || !(Date.now() - Number(w.at) < WINDOW_STALE_MS)) { try { fs.unlinkSync(f); } catch { /* 이미 지움 */ } continue; }
+    for (const fo of Array.isArray(w.folders) ? w.folders : []) {
+      if (!fo || typeof fo.path !== 'string' || typeof fo.uri !== 'string') continue;
+      const r = norm(fo.path);
+      if ((c === r || c.startsWith(r + path.sep)) && (!best || r.length > best.len)) best = { pid, uri: typeof w.workspaceFile === 'string' && w.workspaceFile ? w.workspaceFile : fo.uri, len: r.length };
+    }
+  }
+  return best;
+}
+
+async function handOff(s) {
+  const folders = vscode.workspace.workspaceFolders || [];
+  if (!s.cwd || !folders.length || !UUID_RE.test(String(s.sid))) {
+    return vscode.window.showInformationMessage(L('"{0}" is a session from another folder ({1}). Open it from the Claude list in a VS Code window with that folder open.', s.title, s.project || s.cwd));
+  }
+  if (!fs.existsSync(s.cwd)) return vscode.window.showInformationMessage(L('The folder of "{0}" is not there anymore: {1}', s.title, s.cwd));
+  const win = windowFor(s.cwd);
+  let target = null;
+  if (win) { try { target = vscode.Uri.parse(win.uri); } catch { target = null; } }
+  if (!target) {
+    const go = L('Open in a new window');
+    const pick = await vscode.window.showInformationMessage(L('No VS Code window has the folder of "{0}" open ({1}). Open that folder in a new window and continue the conversation there?', s.title, s.cwd), go);
+    if (pick !== go) return undefined;
+    target = vscode.Uri.file(s.cwd).with({ scheme: folders[0].uri.scheme, authority: folders[0].uri.authority }); // 원격 창이면 같은 서버의 폴더로
+  }
+  try {
+    writeJsonAtomic(path.join(handoffDir('open-requests'), s.sid + '.json'), { sid: s.sid, cwd: s.cwd, at: Date.now(), from: process.pid, to: win ? win.pid : null });
+  } catch (e) {
+    return vscode.window.showWarningMessage(L('Could not open the Claude conversation: {0}', String((e && e.message) || e)));
+  }
+  // 그 폴더가 이미 열린 창이 있으면 VS Code는 새 창 대신 그 창을 앞으로 가져온다
+  return vscode.commands.executeCommand('vscode.openFolder', target, { forceNewWindow: true });
+}
+
+// 다른 창이 이 창에 맡긴 대화 열기 요청을 받는다(창이 켜질 때, 앞으로 올 때, 주기 확인 때)
+function takeOpenRequests() {
+  const dir = handoffDir('open-requests');
+  if (!dir || !(vscode.workspace.workspaceFolders || []).length) return;
+  let names;
+  try { names = fs.readdirSync(dir); } catch { return; }
+  for (const n of names) {
+    const f = path.join(dir, n);
+    const old = () => { try { return Date.now() - fs.statSync(f).mtimeMs > HANDOFF_MS; } catch { return false; } };
+    if (!n.endsWith('.json')) { if (old()) try { fs.unlinkSync(f); } catch { /* 없음 */ } continue; } // 쓰다 만 파일·가져간 파일
+    let r = null;
+    try { r = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { if (old()) try { fs.unlinkSync(f); } catch { /* 없음 */ } continue; }
+    const at = Number(r && r.at);
+    if (!(Date.now() - at < HANDOFF_MS) || at > Date.now() + 5000 || !UUID_RE.test(String(r.sid)) || typeof r.cwd !== 'string') { try { fs.unlinkSync(f); } catch { /* 다른 창이 지움 */ } continue; }
+    if (r.from === process.pid || !inWorkspace({ cwd: r.cwd })) continue;
+    if (r.to && r.to !== process.pid && pidAlive(Number(r.to))) continue; // 다른 창에 맡긴 요청(그 창이 꺼졌으면 이 창이 받는다)
+    const mine = f + '.' + process.pid + '.taken';
+    try { fs.renameSync(f, mine); } catch { continue; } // 다른 창이 먼저 가져갔다
+    try { fs.unlinkSync(mine); } catch { /* 없음 */ }
+    openClaudeSession(r.sid);
   }
 }
 
@@ -3505,6 +3621,8 @@ function workingHere() {
 function startTimer() {
   if (timer) clearInterval(timer);
   timer = setInterval(() => {
+    takeOpenRequests(); // 다른 창이 맡긴 대화 열기(요청 폴더 하나만 본다)
+    if (Date.now() - windowEntryAt > 10 * 60000) writeWindowEntry();
     updateUsage(); // 파일 시각만 본다(바뀌었을 때만 읽음)
     if (checkMemoRequests()) writeTeamRosters(); // 대장이 보드 연결을 부탁했는지(그룹마다 파일 하나가 있는지만 본다), 결과를 명단에 적는다
     if (groupsChangedOnDisk() || boardFilesChanged()) rebuildSessions(); // 다른 VS Code 창이 그룹을 바꿨거나, 대장이 보드의 역할을 고쳤다
@@ -4387,7 +4505,12 @@ function activate(context) {
       else { rebuild(); updateStatusBar(); updateUsage(); }
     }),
     { dispose: () => { if (timer) clearInterval(timer); } },
+    vscode.workspace.onDidChangeWorkspaceFolders(() => writeWindowEntry()),
+    vscode.window.onDidChangeWindowState((e) => { if (e && e.focused) takeOpenRequests(); }),
   );
+  writeWindowEntry();
+  const takeSoon = setTimeout(takeOpenRequests, 1500); // 다른 창이 대화를 열어 달라며 이 창을 막 열었을 수 있다
+  if (takeSoon.unref) takeSoon.unref();
   startTimer();
   updateUsage();
   if (treeView.visible) requestScan(true);
@@ -4397,6 +4520,7 @@ function activate(context) {
 // 끌 때 읽은 결과를 한 번 저장하고 스레드를 닫는다
 function deactivate() {
   if (timer) clearInterval(timer);
+  removeWindowEntry();
   if (liveTimer) { clearTimeout(liveTimer); liveTimer = null; }
   if (tabTimer) { clearTimeout(tabTimer); tabTimer = null; }
   if (boardTimer) { clearTimeout(boardTimer); boardTimer = null; }
@@ -4413,4 +4537,4 @@ function deactivate() {
   });
 }
 
-module.exports = { activate, deactivate, _test: { usageRefreshing: () => usageRefreshing, parseBoardRoles, hunksToSides, applyEdit, displayDir, fmtTime, sidesForCodex, sameTitle, sessionKeyOf, setCodexCli: (v) => { codexCli = v; hasCodexCli.fixed = true; }, setClaudeBin: (p) => { claudeBinFixed = p; } } };
+module.exports = { activate, deactivate, _test: { takeOpenRequests: () => takeOpenRequests(), canOpenSession: (s) => canOpenSession(s), usageRefreshing: () => usageRefreshing, parseBoardRoles, hunksToSides, applyEdit, displayDir, fmtTime, sidesForCodex, sameTitle, sessionKeyOf, setCodexCli: (v) => { codexCli = v; hasCodexCli.fixed = true; }, setClaudeBin: (p) => { claudeBinFixed = p; } } };

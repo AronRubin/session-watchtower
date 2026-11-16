@@ -139,7 +139,7 @@ test('세션 창: 상태·지금 하는 일·변경 규모·다른 폴더 묶음
   assert.strictEqual(p.compact, false);
   assert.match(p.strings.diffTip, /^Last 24 hours: /);
   const g = p.groups.find((x) => x.key === 'other-app');
-  assert.ok(g && g.rows[0].canOpen === false && g.rows[0].state === 'idle');
+  assert.ok(g && g.rows[0].canOpen === true && g.rows[0].state === 'idle', '다른 폴더 세션도 누를 수 있다(그 폴더 창에서 연다)');
   assert.match(web.view.description, /Working 1 · Waiting 0 · Idle 1/, '머리말은 이 폴더 세션만 센다');
   assert.deepStrictEqual([web.lastPayload().openHere, web.lastPayload().openElsewhere], [2, 1], '열린 세션 단추의 숫자도 이 폴더만(다른 폴더는 따로)');
   const str = web.lastPayload().strings;
@@ -160,18 +160,86 @@ test('세션 창 화면 코드가 문법 오류 없이 읽힌다', () => {
   assert.match(web.view.webview.html, /default-src 'none'/, '외부 자원을 막는 보안 정책');
 });
 
-test('세션을 누르면 Claude 대화 열기, 다른 폴더 세션은 안내', async () => {
+test('세션을 누르면 Claude 대화 열기, 새 세션 열기', async () => {
   stub.calls.length = 0;
   web.send({ type: 'open', sid: SID_A });
   await waitFor(() => stub.calls.find((c) => c[0] === 'claude-vscode.editor.open'), '대화 열기');
   assert.strictEqual(stub.calls.find((c) => c[0] === 'claude-vscode.editor.open')[1], SID_A);
   stub.calls.length = 0;
-  web.send({ type: 'open', sid: SID_OTHER });
-  await waitFor(() => stub.calls.find((c) => c[0] === 'info'), '안내 문구');
-  assert.ok(!stub.calls.some((c) => c[0] === 'claude-vscode.editor.open'));
-  stub.calls.length = 0;
   web.send({ type: 'new' });
   await waitFor(() => stub.calls.find((c) => c[0] === 'claude-vscode.editor.open' && c.length === 1), '새 세션');
+});
+
+test('다른 폴더 세션: 그 폴더 창을 앞으로(없으면 물어보고 새 창), 그 창이 요청을 받아 대화를 연다', async () => {
+  const storage = stub.context.globalStorageUri.fsPath;
+  const winDir = path.join(storage, 'windows');
+  const reqDir = path.join(storage, 'open-requests');
+  const reqFile = path.join(reqDir, SID_OTHER + '.json');
+  const readJson = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
+  const openFolder = () => stub.calls.find((c) => c[0] === 'vscode.openFolder');
+  // 이 창은 켜질 때 자기 폴더를 적어 둔다
+  const me = readJson(path.join(winDir, process.pid + '.json'));
+  assert.deepStrictEqual(me.folders.map((f) => f.path), [project]);
+
+  // ① 그 폴더가 열린 창이 없으면 먼저 묻고, 아니라고 하면 아무것도 하지 않는다
+  stub.calls.length = 0;
+  web.send({ type: 'open', sid: SID_OTHER });
+  await waitFor(() => stub.calls.find((c) => c[0] === 'info'), '새 창 열지 묻기');
+  assert.match(stub.calls.find((c) => c[0] === 'info')[1], /No VS Code window has the folder of "Other folder work" open/);
+  await new Promise((r) => setTimeout(r, 100));
+  assert.ok(!openFolder() && !fs.existsSync(reqFile), '묻기에 답하지 않으면 창도 요청도 없다');
+  assert.ok(!stub.calls.some((c) => c[0] === 'claude-vscode.editor.open'), '이 창에서 다른 폴더 대화를 열지 않는다');
+
+  // ② "새 창으로 열기"를 고르면 같은 서버(같은 scheme·authority)의 그 폴더를 새 창으로 열고 요청을 남긴다
+  stub.calls.length = 0;
+  stub.state.answer = (m, b) => (/No VS Code window/.test(m) ? b[0] : undefined);
+  web.send({ type: 'open', sid: SID_OTHER });
+  await waitFor(() => openFolder(), '새 창 열기');
+  stub.state.answer = undefined;
+  assert.strictEqual(openFolder()[1].path, other);
+  assert.deepStrictEqual(openFolder()[2], { forceNewWindow: true });
+  let req = readJson(reqFile);
+  assert.deepStrictEqual([req.sid, req.cwd, req.from, req.to], [SID_OTHER, other, process.pid, null]);
+  assert.ok(!stub.calls.some((c) => c[0] === 'claude-vscode.editor.open'));
+  // 이 창의 폴더 세션이 아니므로 이 창은 그 요청을 가져가지 않는다
+  ext._test.takeOpenRequests();
+  assert.ok(fs.existsSync(reqFile));
+  fs.unlinkSync(reqFile);
+
+  // ③ 그 폴더가 열린 창(살아 있는 다른 프로세스)이 있으면 묻지 않고 그 창의 주소를 연다(VS Code가 그 창을 앞으로 가져온다)
+  fs.writeFileSync(path.join(winDir, process.ppid + '.json'), JSON.stringify({ pid: process.ppid, at: Date.now(), folders: [{ uri: 'vscode-remote://ssh-remote+box' + path.dirname(other), path: path.dirname(other) }, { uri: 'vscode-remote://ssh-remote+box' + other, path: other }], workspaceFile: null }));
+  fs.writeFileSync(path.join(winDir, '999999999.json'), JSON.stringify({ pid: 999999999, at: Date.now(), folders: [{ uri: 'file://' + other, path: other }] }));
+  stub.calls.length = 0;
+  web.send({ type: 'open', sid: SID_OTHER });
+  await waitFor(() => openFolder(), '그 창 앞으로');
+  assert.ok(!stub.calls.some((c) => c[0] === 'info'), '열린 창이 있으면 묻지 않는다');
+  assert.strictEqual(String(openFolder()[1].path), 'vscode-remote://ssh-remote+box' + other, '가장 안쪽 폴더의 창 주소 그대로');
+  req = readJson(reqFile);
+  assert.strictEqual(req.to, process.ppid, '그 창에 맡긴다');
+  assert.ok(!fs.existsSync(path.join(winDir, '999999999.json')), '꺼진 창 기록은 지운다');
+  fs.unlinkSync(reqFile);
+
+  // ④ 받는 쪽: 이 창 폴더의 세션 요청이면 한 번만 가져가 대화를 연다. 남의 창 몫·오래된 요청·다른 폴더 요청은 열지 않는다
+  const put = (name, r) => fs.writeFileSync(path.join(reqDir, name + '.json'), JSON.stringify({ sid: SID_A, cwd: project, at: Date.now(), from: 1, to: null, ...r }));
+  put('mine', {});
+  put('theirs', { to: process.ppid });
+  put('stale', { at: Date.now() - 3 * MIN });
+  put('elsewhere', { cwd: other });
+  put('bad', { sid: 'x; rm -rf ~' });
+  stub.calls.length = 0;
+  stub.state.onWindowState({ focused: true });
+  await waitFor(() => stub.calls.find((c) => c[0] === 'claude-vscode.editor.open'), '맡긴 대화 열기');
+  await new Promise((r) => setTimeout(r, 100));
+  assert.deepStrictEqual(stub.calls.filter((c) => c[0] === 'claude-vscode.editor.open').map((c) => c[1]), [SID_A], '한 번만');
+  assert.deepStrictEqual(fs.readdirSync(reqDir).sort(), ['elsewhere.json', 'theirs.json'], '가져간 요청·오래된 요청·이상한 요청은 지우고, 남의 몫은 둔다');
+  // 맡은 창이 꺼지면 그 폴더가 열린 다른 창이 받는다
+  fs.rmSync(path.join(reqDir, 'elsewhere.json'));
+  put('theirs', { to: 999999999 });
+  stub.calls.length = 0;
+  ext._test.takeOpenRequests();
+  await waitFor(() => stub.calls.find((c) => c[0] === 'claude-vscode.editor.open'), '꺼진 창 몫을 대신 받기');
+  assert.deepStrictEqual(fs.readdirSync(reqDir), []);
+  fs.rmSync(path.join(winDir, process.ppid + '.json'));
 });
 
 test('바깥 주소(알림 배너)로 세션 열기: 해시가 이름보다 먼저, 잘린 이름도 찾고, 없으면 안내', async () => {

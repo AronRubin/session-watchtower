@@ -55,6 +55,8 @@ function install({ extDir, language = 'en', workspace, config = {}, workspaceSch
       },
       registerFileDecorationProvider: (p) => { state.decoProviders.push(p); if (!state.decoProvider) state.decoProvider = p; return disposable(); },
       registerWebviewViewProvider: (id, p) => { webviewProviders[id] = p; return disposable(); },
+      // 창이 앞으로 오는 것: 시험이 state.onWindowState({ focused: true })로 알린다
+      onDidChangeWindowState: (cb) => { state.onWindowState = cb; return disposable(); },
       createStatusBarItem: (id, alignment, priority) => { const it = { id, alignment, priority, text: '', show() { this.visible = true; }, hide() { this.visible = false; }, dispose() {} }; statusItems.push(it); return it; },
       showTextDocument: async (u) => { calls.push(['show', String(u)]); },
       // state.answer(글, 단추들)로 알림 단추를 누른 것처럼 답할 수 있다
@@ -100,6 +102,8 @@ function install({ extDir, language = 'en', workspace, config = {}, workspaceSch
       getConfiguration: () => ({ get: (k, d) => (k in state.config ? state.config[k] : d), update: async (k, v) => { state.config[k] = v; } }),
       registerTextDocumentContentProvider: (scheme, p) => { state.contentProvider = p; return disposable(); },
       onDidChangeConfiguration: (cb) => { state.onConfig = cb; return disposable(); },
+      onDidChangeWorkspaceFolders: (cb) => { state.onFolders = cb; return disposable(); },
+      workspaceFile: undefined,
     },
     commands: {
       registerCommand: (id, f) => { commands.set(id, f); return disposable(); },
