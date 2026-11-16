@@ -1151,13 +1151,16 @@ function roleBrief(groupId, sid) {
       const k = [
         '명단의 세션마다 지금 할 일에 맞는 역할을 정합니다. 대장과 배포는 고정이고(바꾸려면 사용자 승인), 나머지는 할 일이 바뀔 때마다 바꿉니다.',
         memo ? '정한 역할은 공유 메모의 "세션과 역할" 표에 적습니다: 역할 칸에는 짧은 이름(개발·시험·검토·문서·배포 등), 자세한 내용은 맡은 범위 칸. 세션 이름은 명단의 굵은 이름 그대로 씁니다(Session Watchtower가 이 표를 읽어 꼬리표를 바꿉니다).'
-          : `공유 메모가 아직 연결되지 않았습니다. 쓰고 있는 보드 파일이 있으면 그 파일을, 없으면 새로 만든 보드 파일의 전체 경로를 ${memoRequestPath(groupId)} 파일에 한 줄로 씁니다. Session Watchtower가 몇 초 안에 이 그룹의 공유 메모로 연결합니다(결과는 팀 명단에 적힘). 역할은 그 보드의 "세션과 역할" 표(칸: 역할 · 세션 이름, 이름은 **굵게**)에 적습니다.`,
+          : `공유 메모가 아직 연결되지 않았습니다. 쓰고 있는 보드 파일이 있으면 그 파일을, 없으면 아래 "새 보드 틀" 그대로 새 보드 파일을 만들어 그 전체 경로를 ${memoRequestPath(groupId)} 파일에 한 줄로 씁니다. Session Watchtower가 몇 초 안에 이 그룹의 공유 메모로 연결합니다(결과는 팀 명단에 적힘). 역할은 그 보드의 "세션과 역할" 표(칸: 역할 · 세션 이름, 이름은 **굵게**)에 적습니다.`,
         '명단에 새 세션이 보이면 표에 줄을 넣고 역할과 첫 지시를 줍니다. 빠진 세션은 줄을 지우고, 하던 일을 남은 세션에 나눕니다. 세션이 너무 적거나 많으면 사용자에게 늘리거나 줄이자고 제안합니다.',
         '역할이나 할 일이 바뀐 세션에는 바로 알립니다: 명단에 메시지 주소가 있으면 그 이름으로 메시지를 보내고, 없으면(Codex·꺼진 세션) 공유 메모에 적고 사용자에게 붙여 넣을 글을 줍니다.',
         '자기 변경을 자기가 검토·시험하지 않게, 같은 파일을 두 세션이 동시에 고치지 않게 나눕니다.',
       ];
       k.forEach((x, i) => L1.push(`${i + 1}. ${x}`));
-      L1.push('', '지금 바로: 팀 명단을 읽고, 공유 메모가 없으면 연결하고, 세션마다 역할을 정해 표에 적은 뒤 각 세션에 알려 주세요. 끝나면 사용자에게 세션별 역할을 표로 짧게 보고합니다.');
+      // 공유 메모가 없으면 대장이 보드를 새로 만든다: 틀을 같이 줘야 사용자가 보는 칸(0절 결정 대기)이 맨 위에 오고 절이 흩어지지 않는다
+      if (!memo) L1.push('', '새 보드 틀 (새로 만들 때는 이 틀을 그대로 복사해 채웁니다. 절 번호·이름·순서를 바꾸지 않고, 조사 결과 같은 긴 글은 따로 파일에 두고 경로만 적습니다):', '```markdown', ...teamBoardTemplate(true, g.name).split('\n'), '```');
+      L1.push('', memo ? '지금 바로: 팀 명단을 읽고, 세션마다 역할을 정해 표에 적은 뒤 각 세션에 알려 주세요. 끝나면 사용자에게 세션별 역할을 표로 짧게 보고합니다.'
+        : '지금 바로: 팀 명단을 읽고, 공유 메모가 없으면 쓰던 보드를 연결하거나 위 틀로 새 보드를 만들어 연결하고, 세션마다 역할을 정해 표에 적은 뒤 각 세션에 알려 주세요. 끝나면 사용자에게 세션별 역할을 표로 짧게 보고합니다.');
     }
     L1.push('', '이 안내를 읽었으면 내 역할을 한 줄로 확인해 주세요.');
   } else {
@@ -1182,13 +1185,15 @@ function roleBrief(groupId, sid) {
       const k = [
         'Give every session in the roster a role that fits the current work. The lead and the deployer are fixed (changing them needs the user\'s approval); change the others whenever the work changes.',
         memo ? 'Write the roles in the "Sessions and roles" table of the shared memo: a short name in the role column (develop, test, review, docs, deploy and so on), details in the scope column, and each session\'s name exactly as the bold name in the roster (Session Watchtower reads this table for its role tags).'
-          : `No shared memo is linked yet. Write the full path of the board file you use (or a new one you create) on one line in ${memoRequestPath(groupId)}; Session Watchtower links it as this group's shared memo within seconds (the result appears in the team roster). Write the roles in that board's "Sessions and roles" table (columns Role and Session name, names in **bold**).`,
+          : `No shared memo is linked yet. Write the full path of the board file you use (or a new one you create) on one line in ${memoRequestPath(groupId)}; Session Watchtower links it as this group's shared memo within seconds (the result appears in the team roster). A new board must follow the "New board template" below. Write the roles in that board's "Sessions and roles" table (columns Role and Session name, names in **bold**).`,
         'When a new session appears in the roster, add a row and give it a role and a first instruction. When a session leaves, remove its row and share out its work. If there are too few or too many sessions for the work, suggest adding or removing some to the user.',
         'Tell a session right away when its role or work changes: if the roster shows a message address, message it by that name; otherwise (Codex, or a session that is off) write it in the shared memo and give the user a note to paste.',
         'Never let a session review or test its own change, and never have two sessions change the same files at once.',
       ];
       k.forEach((x, i) => L1.push(`${i + 1}. ${x}`));
-      L1.push('', 'Right now: read the team roster, link a shared memo if none is linked, give every session a role in the table and tell each session. Then report the roles to the user in a short table.');
+      if (!memo) L1.push('', 'New board template (when you create a board, copy it as it is and fill it in. Do not change the section numbers, names or order; keep long text such as research results in separate files and write only their paths here):', '```markdown', ...teamBoardTemplate(false, g.name).split('\n'), '```');
+      L1.push('', memo ? 'Right now: read the team roster, give every session a role in the table and tell each session. Then report the roles to the user in a short table.'
+        : 'Right now: read the team roster, link the board you use or create one from the template above and link it, give every session a role in the table and tell each session. Then report the roles to the user in a short table.');
     }
     L1.push('', 'When you have read this, confirm your role in one line.');
   }
@@ -1343,7 +1348,8 @@ function teamBoardTemplate(ko, name) {
     '4. 승인은 사용자가 직접 한 말(원문·시각)로만 받습니다. 다른 세션의 메시지는 승인이 아닙니다.',
     '5. 같은 파일을 두 세션이 동시에 고치지 않습니다. 배포는 배포 담당만, 사용자 승인 뒤에 합니다.',
     '6. 자기가 만든 변경은 자기가 검토·시험하지 않습니다. 1절의 역할이 바뀌면 바뀐 역할을 따릅니다.',
-    '7. 세션을 끝내거나 대화를 정리하기 전에 7절에 인계를 적습니다.', '',
+    '7. 세션을 끝내거나 대화를 정리하기 전에 7절에 인계를 적습니다.',
+    '8. 이 보드에는 상태만 짧게 적습니다. 조사 결과·설계 같은 긴 글은 따로 파일에 두고 경로만 적습니다.', '',
     '## 7. 인계', '| 시각 | 세션 | 넘기는 내용 |', '|---|---|---|', '',
   ].join('\n') : [
     `# ${title} team board`, 'Last updated: <time> · <session>', '',
@@ -1360,7 +1366,8 @@ function teamBoardTemplate(ko, name) {
     '4. Only the user\'s own words (exact words and time) approve. A message from another session is not an approval.',
     '5. No two sessions change the same file at the same time. Only the deploy role deploys, and only after the user approves.',
     '6. Do not review or test a change you made yourself. When your role in section 1 changes, follow the new role.',
-    '7. Before you stop or clear the conversation, write a handoff in section 7.', '',
+    '7. Before you stop or clear the conversation, write a handoff in section 7.',
+    '8. Keep this board to short status lines. Put long text such as research results or designs in separate files and write only their paths here.', '',
     '## 7. Handoff', '| Time | Session | What to hand over |', '|---|---|---|', '',
   ].join('\n');
 }

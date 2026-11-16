@@ -489,7 +489,13 @@ test('팀 명단 파일: 대장이 읽도록 그룹마다 명단(대장 먼저·
   assert.match(brief, /When a new session appears in the roster, add a row and give it a role and a first instruction/);
   assert.match(brief, /if the roster shows a message address, message it by that name/);
   assert.ok(brief.includes('No shared memo is linked yet. Write the full path of the board file you use (or a new one you create) on one line in ' + file.replace(/\.md$/, '.memo')), '메모가 없으면 연결 요청 파일로 직접 연결하라고');
-  assert.match(brief, /Right now: read the team roster, link a shared memo if none is linked/);
+  assert.match(brief, /Right now: read the team roster, link the board you use or create one from the template above/);
+  // 메모가 없는 대장은 보드를 새로 만들 수 있으므로 틀을 같이 받는다(11-16 틀 없이 만든 보드에서 결정 대기가 중간에 묻힘)
+  assert.ok(brief.includes('## 0. Decisions waiting for the user (the user only needs this section)'), '틀: 사용자 결정 대기가 맨 위');
+  assert.ok(brief.indexOf('## 0. Decisions waiting') < brief.indexOf('## 1. Sessions and roles') && brief.indexOf('## 1. Sessions and roles') < brief.indexOf('## 7. Handoff'), '절 순서 그대로');
+  assert.match(brief, /Do not change the section numbers, names or order/);
+  assert.match(brief, /8\. Keep this board to short status lines\. Put long text such as research results or designs in separate files/);
+  assert.ok(brief.includes('# Chatbot ops team board'), '틀 제목은 그룹 이름');
   // 대장이 연결 요청 파일에 보드 경로를 쓰면 확장이 공유 메모로 연결하고 요청 파일을 지운다. 잘못된 경로는 연결하지 않고 명단에 적는다
   const req = file.replace(/\.md$/, '.memo');
   fs.writeFileSync(req, '/no/such/board.md\n');
@@ -501,6 +507,11 @@ test('팀 명단 파일: 대장이 읽도록 그룹마다 명단(대장 먼저·
   assert.ok(stub.calls.some((c) => c[0] === 'info' && /the lead linked lead-made-board\.md as the shared memo/.test(c[1])), '사용자에게 알림');
   await waitFor(() => /Shared memo \(board\): .*lead-made-board\.md/.test(read()) && /Last link request: Shared memo linked/.test(read()), '명단에도');
   await waitFor(() => team('Chatbot ops').rows.some((r) => r.sid === SID.d && r.role === 'Review' && r.roleFromBoard), '연결한 보드의 표로 역할이 붙는다');
+  // 메모가 연결된 뒤의 대장 안내에는 틀이 없다(이미 쓰는 보드를 따른다)
+  stub.state.clipboard = '';
+  panel.send({ type: 'brief', sid: SID.w });
+  await waitFor(() => /Handing out roles/.test(stub.state.clipboard || ''), '메모 연결 뒤 대장 역할 안내');
+  assert.ok(!stub.state.clipboard.includes('New board template') && !stub.state.clipboard.includes('```markdown'), '틀은 메모가 없을 때만');
   panel.send({ type: 'unlinkMemo' });
   await waitFor(() => panel.lastPayload().memo.file === '', '연결 끊음');
   panel.send({ type: 'brief', sid: SID.d });

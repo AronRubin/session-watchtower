@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.31.3
+
+- **A lead without a shared memo gets the board template.** The lead's role note, when no shared memo is linked yet, now includes the team board template (decisions waiting for the user at the top) and says to keep its section numbers, names and order. Before, the lead could create a board in any shape, and the user's section ended up in the middle.
+- The board template has an eighth rule: keep the board to short status lines and put long text such as research results in separate files, with only their paths on the board.
+- The built-in phone board gets a way back to the start on wide screens (click the title, or "All" button), copied from session-board 12b2a20.
+
 ## 0.31.2
 
 - **Codex chats no longer vanish after the time range.** Codex chats older than the time range (for example 30 minutes) were not looked for at all, so after a while, or after restarting VS Code, they were missing from the list and from *Archived*. They are now listed like Claude sessions: this folder's Codex chats up to `sessionListDays`, other folders' for a shorter time, and old ones go to *Archived* by the usual rule. Review sub-threads stay under their chat.
