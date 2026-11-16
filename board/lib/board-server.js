@@ -41,13 +41,24 @@ function createBoardServer(cfg, opts = {}) {
   }
   // opts.feed가 있으면(확장이 이미 세션을 읽고 있을 때) 그 결과를 받아 쓰고, 없으면 읽기 스레드를 따로 띄운다.
   // feed(cb): 읽을 때마다 cb({ sessions, at }) 또는 cb({ error })를 부르는 함수
+  // feed가 바로(같은 순간에) 부르더라도 아래 준비(그룹 파일 읽기 등)가 끝난 뒤에 받도록 한 박자 미룬다
   let worker = null;
-  if (typeof opts.feed === 'function') opts.feed(onScan);
-  else {
+  let closing = false;
+  let restartMs = 5000;
+  function startWorker() {
     worker = new Worker(path.join(__dirname, 'scan-worker.js'), { workerData: cfg });
-    worker.on('message', onScan);
+    worker.on('message', (m) => { restartMs = 5000; onScan(m); });
     worker.on('error', (e) => { latest = { ...latest, error: String((e && e.message) || e) }; log.error('scan worker error', e); });
+    // 읽기 스레드가 죽으면(메모리 부족 등) 다시 띄운다. 그대로 두면 세션 목록과 휴대폰 알림이 소리 없이 멈춘다
+    worker.on('exit', (code) => {
+      if (closing) return;
+      log.error(`scan worker exited (${code}); restarting in ${restartMs / 1000}s`);
+      setTimeout(() => { if (!closing) startWorker(); }, restartMs).unref();
+      restartMs = Math.min(restartMs * 2, 5 * 60 * 1000);
+    });
   }
+  if (typeof opts.feed === 'function') opts.feed((m) => queueMicrotask(() => onScan(m)));
+  else startWorker();
 
   function memoJson(file) {
     let memo = { mtimeMs: -1, data: null };
@@ -127,7 +138,8 @@ function createBoardServer(cfg, opts = {}) {
     const h = req.headers.cookie || '';
     for (const part of h.split(';')) {
       const i = part.indexOf('=');
-      if (i > 0 && part.slice(0, i).trim() === 'sb') return decodeURIComponent(part.slice(i + 1).trim());
+      // 깨진 쿠키(%zz 등)는 없는 것으로 본다(예외가 나면 모든 화면이 500이 되어 다시 연결도 못 한다)
+      if (i > 0 && part.slice(0, i).trim() === 'sb') { try { return decodeURIComponent(part.slice(i + 1).trim()); } catch { return null; } }
     }
     return null;
   }
@@ -352,6 +364,8 @@ function createBoardServer(cfg, opts = {}) {
             return json(res, 200, { ...dt, sid, host: r ? r.name : '' });
           } catch { return json(res, 502, { error: 'bad remote response' }); }
         }
+        // 그 컴퓨터가 이 보드의 열쇠를 거절한 401은 그대로 넘기지 않는다: 휴대폰은 401을 "이 기기 연결 끊김"으로 알고 새로고침을 되풀이한다
+        if (status === 401) return json(res, 502, { error: 'remote board refused this board (reconnect it)' });
         return send(res, status, body, 'application/json; charset=utf-8');
       }).catch((e) => { log.error(e); if (!res.headersSent) json(res, 502, { error: 'remote failed' }); });
       return;
@@ -426,6 +440,7 @@ function createBoardServer(cfg, opts = {}) {
     },
     // 확장을 끌 때도 쓰므로 열린 연결까지 닫고 읽기 스레드를 멈춘다
     close() {
+      closing = true;
       if (worker) worker.terminate();
       removeRun();
       return new Promise((resolve) => {

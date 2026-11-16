@@ -138,7 +138,7 @@ function createNotifier({ delayMs = 60000, gapMs = 30000 } = {}) {
       if (!keys.has(k)) { pending.delete(k); continue; } // 그 사이에 답함
       if (now - t >= delayMs) { pending.delete(k); notified.set(k, now); due = true; }
     }
-    for (const [k, t] of notified) if (now - t > 24 * 3600e3) notified.delete(k);
+    for (const [k, t] of notified) if (!keys.has(k) && now - t > 24 * 3600e3) notified.delete(k);
     if (due) owed = true;
     if (owed && now - lastFire >= gapMs) { owed = false; lastFire = now; return true; }
     return false;

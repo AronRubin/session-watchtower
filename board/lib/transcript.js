@@ -30,6 +30,21 @@ function maskSecrets(text) {
   return t;
 }
 
+// 바뀐 줄([표시, 글])을 줄마다 가린다. 개인 키는 BEGIN 줄부터 END 줄까지 여러 줄이라 줄 하나만 보면 놓치므로 상태를 이어 본다
+const KEY_BEGIN_RE = /-----BEGIN [A-Z ]*PRIVATE KEY-----/;
+const KEY_END_RE = /-----END [A-Z ]*PRIVATE KEY-----/;
+function maskLines(lines) {
+  let inKey = false;
+  return lines.map(([t, s]) => {
+    const line = String(s == null ? '' : s);
+    if (inKey || KEY_BEGIN_RE.test(line)) {
+      inKey = !KEY_END_RE.test(line) || (KEY_BEGIN_RE.test(line) && line.lastIndexOf('-----BEGIN') > line.lastIndexOf('-----END'));
+      return [t, MASK];
+    }
+    return [t, maskSecrets(line)];
+  });
+}
+
 // 파일의 offset 위치에서 length 바이트를 읽어 JSON 한 줄로 푼다(Watchtower의 readRecord와 같은 일)
 function readRecord(file, offset, length) {
   if (!file || !(offset >= 0) || !(length > 0) || length > 64 * 1024 * 1024) return null;
@@ -381,7 +396,7 @@ function diffFor(changes, scanner) {
     for (const h of hunks) {
       if (total >= DIFF_LINES_MAX) { truncated = true; break; }
       const room = DIFF_LINES_MAX - total;
-      const lines = h.lines.slice(0, room).map(([t, s]) => [t, maskSecrets(s).slice(0, 2000)]);
+      const lines = maskLines(h.lines).slice(0, room).map(([t, s]) => [t, s.slice(0, 2000)]);
       if (lines.length < h.lines.length) truncated = true;
       total += lines.length;
       kept.push({ head: h.head, lines });
@@ -393,4 +408,4 @@ function diffFor(changes, scanner) {
 }
 
 module.exports = {
-  codexItem, maskSecrets, readRecord, tailLines, cleanUserText, toolSummary, conversationTail, lastWords, lastLineOf, classifyTurn, diffFor, hunksFromUnified, MASK };
+  codexItem, maskSecrets, maskLines, readRecord, tailLines, cleanUserText, toolSummary, conversationTail, lastWords, lastLineOf, classifyTurn, diffFor, hunksFromUnified, MASK };

@@ -281,14 +281,14 @@
   }
 
   // 글 복사: 클립보드 API가 막히면 숨긴 글상자로 한 번 더 시도한다
-  async function copyText(t) {
+  async function copyText(text) {
     try {
-      await navigator.clipboard.writeText(t);
+      await navigator.clipboard.writeText(text);
       showToast(t('복사했습니다.'));
       return;
     } catch { /* 아래로 */ }
     const ta = el('textarea', 'cpyhide');
-    ta.value = t;
+    ta.value = text;
     ta.setAttribute('readonly', '');
     document.body.appendChild(ta);
     ta.select();
@@ -310,15 +310,15 @@
   function extBadge(name) {
     const n = name.toLowerCase();
     const e = n.includes('.') ? n.split('.').pop() : '';
-    let t = e.slice(0, 4).toUpperCase() || '·';
+    let label = e.slice(0, 4).toUpperCase() || '·';
     let c = '';
-    if (/\.test\.|\.spec\.|tests?\.cs$/.test(n)) { t = 'TEST'; c = 'x-test'; }
-    else if (['js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx'].includes(e)) { t = e === 'ts' || e === 'tsx' ? 'TS' : 'JS'; c = 'x-js'; }
-    else if (e === 'json' || e === 'jsonl') { t = '{ }'; c = 'x-json'; }
-    else if (e === 'md') { t = 'MD'; c = 'x-md'; }
-    else if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(e)) { t = 'IMG'; c = 'x-img'; }
-    else if (e === 'cs' || e === 'razor') { t = e === 'cs' ? 'C#' : 'RZR'; c = 'x-cs'; }
-    return el('span', 'ext ' + c, t);
+    if (/\.test\.|\.spec\.|tests?\.cs$/.test(n)) { label = 'TEST'; c = 'x-test'; }
+    else if (['js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx'].includes(e)) { label = e === 'ts' || e === 'tsx' ? 'TS' : 'JS'; c = 'x-js'; }
+    else if (e === 'json' || e === 'jsonl') { label = '{ }'; c = 'x-json'; }
+    else if (e === 'md') { label = 'MD'; c = 'x-md'; }
+    else if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(e)) { label = 'IMG'; c = 'x-img'; }
+    else if (e === 'cs' || e === 'razor') { label = e === 'cs' ? 'C#' : 'RZR'; c = 'x-cs'; }
+    return el('span', 'ext ' + c, label);
   }
 
   // ---------- 주소(#s=세션&t=탭) ----------
@@ -350,11 +350,11 @@
   }
   async function loadState(force) {
     try {
-      const t = await getText('/api/state?win=' + S.win);
+      const text = await getText('/api/state?win=' + S.win);
       S.failed = false;
       S.lastOk = Date.now();
       // 시각 값(now·scannedAt)은 매번 바뀌므로 빼고 비교한다. 내용이 같으면 시각만 고치고 다시 그리지 않는다
-      const d = JSON.parse(t);
+      const d = JSON.parse(text);
       const key = JSON.stringify({ ...d, now: 0, scannedAt: 0 });
       if (key !== S.stateKey || force || !S.data) {
         S.stateKey = key;
@@ -375,33 +375,39 @@
     if (!S.sel) return;
     const sid = S.sel;
     try {
-      const t = await getText('/api/session?sid=' + encodeURIComponent(sid) + '&win=' + S.win + '&n=' + S.convN);
+      const text = await getText('/api/session?sid=' + encodeURIComponent(sid) + '&win=' + S.win + '&n=' + S.convN);
       if (S.sel !== sid) return;
       const was = S.loadingMore;
       // 세션을 막 열었을 때(아직 내용 없음)는 누른 손가락 때문에 미루지 않고 바로 그린다
       const first = !S.detail || S.detail.error;
       S.loadingMore = false;
-      if (t === S.detailText) { if (was) render(); return; }
-      S.detailText = t;
-      S.detail = JSON.parse(t);
+      if (text === S.detailText) { if (was) render(); return; }
+      S.detailText = text;
+      S.detail = JSON.parse(text);
       if (was || first) { render(); return; }
     } catch {
       if (S.sel !== sid) return;
       S.loadingMore = false;
       if (S.detail && !S.detail.error) return;
-      // 서버가 막 다시 떠서 아직 세션을 다 못 읽었을 수 있다: 10초를 기다리지 않고 2초 뒤 다시
+      // 서버가 막 다시 떠서 아직 세션을 다 못 읽었을 수 있다: 10초를 기다리지 않고 2초 뒤 다시.
+      // 다시 시도는 한 번에 하나만 건다(실패할 때마다 새로 걸면 시도가 끝없이 불어난다). 그 뒤로는 10초 주기에 맡긴다
       S.detail = { error: true };
-      setTimeout(() => { if (S.sel === sid && S.detail && S.detail.error) loadDetail(); }, 2000);
+      if (!S.retryTimer) S.retryTimer = setTimeout(() => { S.retryTimer = 0; if (S.sel === sid && S.detail && S.detail.error) loadDetail(); }, 2000);
     }
     softRender();
   }
   async function loadDiff(p) {
     if (!S.sel) return;
+    const sid = S.sel;
     S.diffs.set(p, { loading: true });
     render();
+    let v;
     try {
-      S.diffs.set(p, JSON.parse(await getText('/api/diff?sid=' + encodeURIComponent(S.sel) + '&path=' + encodeURIComponent(p) + '&win=' + S.win)));
-    } catch { S.diffs.set(p, { error: true }); }
+      v = JSON.parse(await getText('/api/diff?sid=' + encodeURIComponent(sid) + '&path=' + encodeURIComponent(p) + '&win=' + S.win));
+    } catch { v = { error: true }; }
+    // 기다리는 사이 다른 세션으로 옮겼으면 버린다(같은 경로 이름의 파일에 앞 세션 내용이 보이지 않게)
+    if (S.sel !== sid) return;
+    S.diffs.set(p, v);
     render();
   }
 
@@ -930,10 +936,10 @@
     if (p + q < Math.max(a.length, b.length) * 0.3) return null;
     return [[p, a.length - q], [p, b.length - q]];
   }
-  function diffLine(t, s, range) {
-    const ln = el('span', 'ln ' + (t === '+' ? 'a' : t === '-' ? 'x' : 'c'));
-    if (!range || range[0] >= range[1]) { ln.textContent = t + ' ' + s; return ln; }
-    add(ln, document.createTextNode(t + ' ' + s.slice(0, range[0])), el('span', 'w', s.slice(range[0], range[1])), document.createTextNode(s.slice(range[1])));
+  function diffLine(mark, s, range) {
+    const ln = el('span', 'ln ' + (mark === '+' ? 'a' : mark === '-' ? 'x' : 'c'));
+    if (!range || range[0] >= range[1]) { ln.textContent = mark + ' ' + s; return ln; }
+    add(ln, document.createTextNode(mark + ' ' + s.slice(0, range[0])), el('span', 'w', s.slice(range[0], range[1])), document.createTextNode(s.slice(range[1])));
     return ln;
   }
   function renderLines(box, lines) {
@@ -954,7 +960,7 @@
   function lineCount(hunks) {
     let a = 0;
     let x = 0;
-    for (const h of hunks) for (const [t] of h.lines) { if (t === '+') a++; else if (t === '-') x++; }
+    for (const h of hunks) for (const [mark] of h.lines) { if (mark === '+') a++; else if (mark === '-') x++; }
     return a || x ? ` · +${a} −${x}` : '';
   }
 
@@ -1099,7 +1105,12 @@
     S.commits.set(sha, { loading: true });
     try {
       S.commits.set(sha, JSON.parse(await getText('/api/commit?sid=' + encodeURIComponent(S.sel) + '&sha=' + encodeURIComponent(sha))));
-    } catch { S.commits.set(sha, { error: true }); }
+    } catch {
+      // 못 읽은 표시는 10초만 둔다. 그 뒤 다시 그릴 때 새로 읽는다(한 번 실패가 새로고침 전까지 남지 않게)
+      const err = { error: true };
+      S.commits.set(sha, err);
+      setTimeout(() => { if (S.commits.get(sha) === err) S.commits.delete(sha); }, 10000);
+    }
     render();
   }
   function commitBody(c) {
@@ -1277,9 +1288,9 @@
     for (const x of working.slice(0, 12)) {
       const r = el('button', 'wrow');
       r.type = 'button';
-      const t = el('span', 'wt');
-      add(t, el('b', '', x.title), el('span', '', x.activity ? (x.activity.tool || '') + (x.activity.arg ? ' · ' + x.activity.arg : '') : statusText(x)));
-      add(r, el('span', 'dot d-work'), t, el('span', 'el', during(x.since, d.now)));
+      const wt = el('span', 'wt');
+      add(wt, el('b', '', x.title), el('span', '', x.activity ? (x.activity.tool || '') + (x.activity.arg ? ' · ' + x.activity.arg : '') : statusText(x)));
+      add(r, el('span', 'dot d-work'), wt, el('span', 'el', during(x.since, d.now)));
       r.addEventListener('click', () => go(x.sid, 'conv'));
       add(wk, r);
     }
@@ -1378,8 +1389,8 @@
     return r.json();
   }
   function b64uBytes(s) {
-    const t = s.replace(/-/g, '+').replace(/_/g, '/');
-    const b = atob(t + '='.repeat((4 - (t.length % 4)) % 4));
+    const std = s.replace(/-/g, '+').replace(/_/g, '/');
+    const b = atob(std + '='.repeat((4 - (std.length % 4)) % 4));
     return Uint8Array.from(b, (c) => c.charCodeAt(0));
   }
   async function pushInit() {

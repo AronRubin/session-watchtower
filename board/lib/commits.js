@@ -8,17 +8,42 @@ const T = require('./transcript');
 const FILE_LINES_MAX = 400;
 const TOTAL_LINES_MAX = 2000;
 
+// core.quotePath=false: 한글 등 비ASCII 경로를 "\355…" 꼴로 감싸지 않게(파일 나누기가 섞이지 않게)
 function git(top, args, maxBuffer) {
-  return execFileSync('git', ['-C', top, ...args], { encoding: 'utf8', timeout: 6000, maxBuffer: maxBuffer || 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
+  return execFileSync('git', ['-C', top, '-c', 'core.quotePath=false', ...args], { encoding: 'utf8', timeout: 6000, maxBuffer: maxBuffer || 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
 }
 
-// "diff --git a/x b/x" 단위로 나눈다
+// git이 따옴표로 감싼 경로("b/\355\225\234.md", 특수 문자가 든 경로)를 푼다
+function unquote(q) {
+  const bytes = [];
+  for (let i = 0; i < q.length; i++) {
+    const c = q[i];
+    if (c !== '\\') { for (const b of Buffer.from(c, 'utf8')) bytes.push(b); continue; }
+    const n = q[i + 1];
+    if (/[0-7]/.test(n)) { bytes.push(parseInt(q.slice(i + 1, i + 4), 8)); i += 3; continue; }
+    const esc = { n: 10, t: 9, r: 13, '"': 34, '\\': 92, a: 7, b: 8, f: 12, v: 11 }[n];
+    bytes.push(esc != null ? esc : n.charCodeAt(0));
+    i++;
+  }
+  return Buffer.from(bytes).toString('utf8');
+}
+
+// 따옴표 없는 경로: 이름이 바뀌지 않은 파일은 앞뒤 경로가 같으므로, 경로 안에 " b/"가 있어도 가운데에서 정확히 나눈다
+function plainPath(line, greedy) {
+  const rest = line.slice('diff --git a/'.length);
+  const half = (rest.length - 3) / 2;
+  if (Number.isInteger(half) && rest.slice(half, half + 3) === ' b/' && rest.slice(0, half) === rest.slice(half + 3)) return rest.slice(half + 3);
+  return greedy;
+}
+
+// "diff --git a/x b/x" 단위로 나눈다. 경로가 따옴표로 감싸여 있으면("a/…" "b/…") 풀어서 쓴다
 function splitFiles(text) {
   const files = [];
   let cur = null;
   for (const line of String(text || '').split('\n')) {
-    const m = /^diff --git a\/(.*) b\/(.*)$/.exec(line);
-    if (m) { cur = { path: m[2], lines: [] }; files.push(cur); continue; }
+    const q = /^diff --git "?a\/(?:[^"]|\\")*"? "b\/((?:[^"\\]|\\.)*)"$/.exec(line);
+    const m = q ? null : /^diff --git "?a\/(.*)"? b\/(.*)$/.exec(line);
+    if (q || m) { cur = { path: q ? unquote(q[1]) : plainPath(line, m[2]), lines: [] }; files.push(cur); continue; }
     if (cur) cur.lines.push(line);
   }
   return files;
@@ -44,7 +69,7 @@ function commitDetail(top, sha) {
       for (const [t] of h.lines) { if (t === '+') add++; else if (t === '-') del++; }
       const room = Math.min(FILE_LINES_MAX - hunks.reduce((n, x) => n + x.lines.length, 0), TOTAL_LINES_MAX - total);
       if (room <= 0) { fileTrunc = true; continue; }
-      const lines = h.lines.slice(0, room).map(([t, s]) => [t, T.maskSecrets(s).slice(0, 2000)]);
+      const lines = T.maskLines(h.lines).slice(0, room).map(([t, s]) => [t, s.slice(0, 2000)]);
       if (lines.length < h.lines.length) fileTrunc = true;
       total += lines.length;
       hunks.push({ head: h.head, lines });

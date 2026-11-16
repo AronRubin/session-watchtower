@@ -71,7 +71,7 @@ function createStore(stateDir) {
     return token;
   }
 
-  let lastSeenSave = 0;
+  const lastSeenSave = new Map(); // 기기 id → 마지막으로 적은 시각(자주 묻는 기기가 다른 기기 기록을 막지 않게 기기별로)
   // 토큰이 맞으면 기기 id, 아니면 null
   function checkToken(token, now = Date.now()) {
     if (!token || typeof token !== 'string' || token.length > 200) return null;
@@ -83,9 +83,9 @@ function createStore(stateDir) {
       if (safeEqual(Buffer.from(d.hash, 'hex'), got)) hit = d;
     }
     if (!hit) return null;
-    if (now - lastSeenSave > 5 * 60 * 1000) {
+    if (now - (lastSeenSave.get(hit.id) || 0) > 5 * 60 * 1000) {
       hit.lastSeen = now;
-      try { writeJson(devFile, { devices: list }); lastSeenSave = now; } catch { /* 무시 */ }
+      try { writeJson(devFile, { devices: list }); lastSeenSave.set(hit.id, now); } catch { /* 무시 */ }
     }
     return hit.id;
   }

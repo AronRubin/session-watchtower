@@ -53,10 +53,11 @@ function createRemotes(stateDir, opts = {}) {
   function current() {
     if (opts.remotes) return all;
     const m = mtimeOf();
-    if (m !== mtime) { mtime = m; all = loadRemotes(stateDir); }
+    // remotes.json이 바뀌면 읽어 둔 것도 버린다(같은 r1 번호를 새 컴퓨터가 받으면 옛 컴퓨터 세션이 새 이름으로 보이지 않게)
+    if (m !== mtime) { mtime = m; all = loadRemotes(stateDir); cache.clear(); }
     return all;
   }
-  const cache = new Map(); // `${id}:${win}` → { at, ok, okAt, data, err }
+  const cache = new Map(); // `${id}|${url}:${win}` → { at, ok, okAt, data, err }
   const inflight = new Map();
 
   async function get(r, pathQs) {
@@ -71,8 +72,9 @@ function createRemotes(stateDir, opts = {}) {
     return { status: res.status, body };
   }
 
+  const keyOf = (r, win) => r.id + '|' + r.url + ':' + win;
   async function refresh(r, win) {
-    const key = r.id + ':' + win;
+    const key = keyOf(r, win);
     const old = cache.get(key) || {};
     try {
       const { status, body } = await get(r, '/api/state?win=' + win);
@@ -90,7 +92,7 @@ function createRemotes(stateDir, opts = {}) {
   // 예전에 읽은 것이 있으면 기다리지 않고 그것을 주고(뒤에서 갱신), 처음이면 답을 기다린다(최대 timeoutMs)
   async function states(win) {
     return Promise.all(current().map(async (r) => {
-      const key = r.id + ':' + win;
+      const key = keyOf(r, win);
       const c = cache.get(key);
       if (!c || Date.now() - c.at >= FRESH_MS) {
         let p = inflight.get(key);
@@ -156,6 +158,14 @@ function mergeState(local, remotes, now = Date.now()) {
     remotes: [],
   };
   const urls = new Set();
+  // 화면은 컴퓨터를 이름으로 나눈다. 이름이 같은 컴퓨터(기본 이름이 같은 raspberrypi 등)는 뒤에 번호를 붙여 섞이지 않게
+  const used = new Set([local.label]);
+  for (const x of remotes) {
+    let name = x.r.name;
+    if (used.has(name)) name = `${name} (${x.r.id})`;
+    used.add(name);
+    x.r = { ...x.r, name };
+  }
   for (const { r, c } of remotes) {
     urls.add(r.url.replace(/\/$/, ''));
     st.remotes.push({ id: r.id, name: r.name, ok: !!(c && c.ok), okAt: (c && c.okAt) || 0, error: c && !c.ok ? c.err : null });
