@@ -3593,7 +3593,7 @@ function onWorkerMessage(m) {
   }
   if (m.type === 'status') {
     statusInflight = false;
-    // 실행 중 목록만 읽은 결과 + 마지막 전체 읽기에서 본 Codex 작업 중 세션
+    // 실행 중 목록만 읽은 결과 + 마지막 전체 읽기에서 본 Codex 작업 중·쉼 세션(마지막 활동 6시간 안)
     statusSessions = (m.sessions || []).concat(raw.filter((s) => s.agent === 'codex' && s.alive));
     updateStatusBar();
     checkWaiting(statusSessions);

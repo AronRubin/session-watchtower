@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.31.1
+
+- **Finished Codex chats are idle, not off.** Codex has no process per conversation and any chat can be continued after VS Code restarts, so a Codex session whose last activity is within 6 hours now shows as idle (or "just finished" for the first 10 minutes) instead of off. Older ones show as off. It also counts in *Open*. A Codex session in the middle of a turn is still working.
+- The built-in phone board now has the wide computer layout (counts at the top, waiting cards in a grid, "working now | just finished" side by side, settings in a drawer), copied from session-board 3db18dd.
+
 ## 0.31.0
 
 - **The phone board is built in.** Turn it on with *Phone board: turn on or off* (also in the Sessions view's `…` menu); no separate program to install. It is off by default and, when on, listens on this computer only (`127.0.0.1:5290`, setting `phoneBoard.port`); your phone reaches it through your own Tailscale (`tailscale serve`, never Funnel). Phones and browsers connect with a one-time code, and *Phone board: disconnect all phones and browsers* cancels them all.

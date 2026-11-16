@@ -403,7 +403,7 @@ test('Codex: 작업 폴더 밖 저장소의 파일을 파이썬으로 고친 명
   const r = S.createModel().scan(base());
   const done = find(r, 'codex:' + DONE);
   assert.deepStrictEqual(done.changes.filter((c) => c.path === note).map((c) => [c.kind, c.via]), [['shell', 'mtime']], '명령 속 절대 경로의 저장소에서 바뀐 파일을 찾는다');
-  assert.deepStrictEqual([done.alive, done.status], [false, null], '턴을 마쳤으면 쉼(20초 전에 끝났어도)');
+  assert.deepStrictEqual([done.alive, done.status], [true, 'idle'], '턴을 마쳤으면 바로 쉼(20초 전에 끝났어도). Codex는 프로세스가 없으니 "꺼짐"이 아니라 쉼');
   const busy = find(r, 'codex:' + BUSY);
   assert.deepStrictEqual([busy.alive, busy.status], [true, 'busy'], '턴 중이고 최근에 기록했으면 작업 중');
   assert.deepStrictEqual(S.pathDirsIn(`cat ${note} https://example.invalid/a/b /`), [repo], '있는 경로의 폴더만, 주소와 뿌리는 뺀다');

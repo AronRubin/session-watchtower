@@ -16,6 +16,9 @@ const CACHE_VERSION = 7; // 7: Codex 마지막 활동 시각을 기록 시각으
 const CACHE_VERSION_OLD_NOTE = 6; // 4: 마지막 대화 시각(lastMsgTs)·목록용 요약 읽기 추가 — 옛 저장 파일은 버리고 한 번 새로 읽음
 const CACHE_SAVE_MS = 20000;
 const CODEX_ACTIVE_MS = 90000;
+// Codex는 대화마다 프로세스가 없고 VS Code를 껐다 켜도 언제든 이어 쓸 수 있다. 그래서 "꺼짐" 대신 마지막 활동(기록 시각)이
+// 이 시간 안이면 쉼으로 본다(따로 설치하는 보드가 닫힌 세션을 접는 기준 closedHours 6과 같다)
+const CODEX_IDLE_MS = 6 * 3600e3;
 // "지금 고치는 중"으로 보는 시간: 마지막으로 바뀐 뒤 이만큼
 const LIVE_MS = 30000;
 // 하위 에이전트 기록이 이 시간 안에 바뀌었으면 작업 중으로 본다
@@ -1977,11 +1980,12 @@ function createModel() {
       // 최근 90초 안에 기록한 스레드(본 대화·하위 스레드)가 모두 턴을 마쳤으면 바로 쉼. 하나라도 턴 중이면 작업 중
       const cxRecent = codex ? sts.filter((x) => x.lastMsgTs && t0 - x.lastMsgTs < CODEX_ACTIVE_MS) : [];
       const codexActive = codex && t0 - lastActivity < CODEX_ACTIVE_MS && !(cxRecent.length && cxRecent.every((x) => x.cxEnded));
+      const codexOpen = codex && (codexActive || t0 - lastActivity < CODEX_IDLE_MS);
       let state = {
-        alive: codex ? codexActive : !!reg,
-        status: codex ? (codexActive ? 'busy' : null) : reg ? reg.status : null,
+        alive: codex ? codexOpen : !!reg,
+        status: codex ? (codexActive ? 'busy' : codexOpen ? 'idle' : null) : reg ? reg.status : null,
         waitingFor: reg ? reg.waitingFor : null,
-        statusSince: codex ? (codexActive ? lastActivity : null) : reg ? reg.statusSince : null,
+        statusSince: codex ? (codexOpen ? lastActivity : null) : reg ? reg.statusSince : null,
       };
       if (!codex) state = applyMarker(state, attentionMarker(opts.attentionDir, sid), lastWrite);
       const liveFiles = !partial && state.alive && state.status === 'busy' ? recentlyTouched(changes, t0) : [];

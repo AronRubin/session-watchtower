@@ -123,7 +123,7 @@ test('그룹을 만들고 세션을 넣으면 세션 창 맨 위에 묶여 보�
   await waitFor(() => team('Chatbot ops') && team('Chatbot ops').rows.length === 1, '그룹에 들어감');
   assert.strictEqual(team('Chatbot ops').rows[0].team, team('Chatbot ops').id);
   assert.ok(!P().mine.some((r) => r.sid === SID.w), '그룹에 든 세션은 이 폴더 칸에 다시 나오지 않는다');
-  assert.strictEqual(P().openHere, 3, '열린 세션 수는 그룹과 상관없이 이 폴더 기준(꺼진 Loner 빼고 셋)');
+  assert.strictEqual(P().openHere, 4, '열린 세션 수는 그룹과 상관없이 이 폴더 기준(꺼진 Loner 빼고 넷: 12분 전에 끝난 Codex 대화는 쉼으로 센다)');
 
   // 역할: 개발에 흔히 필요한 역할 목록에서 고른다(하는 일이 함께 보임)
   const qp = await pickRoles(() => web.send({ type: 'role', sid: SID.w }), ['Watch']);
