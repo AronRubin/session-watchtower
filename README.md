@@ -296,19 +296,26 @@ The session counts sit right next to the usage, on the right side of the status 
 
 ## Phone board
 
-The phone board shows the sessions of this computer in your phone's browser: which one is working or waiting for you, what each changed, and the conversation. It is read-only; to answer a session you still use Claude Code (or its Remote Control). It is a separate program, **session-board**, that runs next to Claude Code; the phone reaches it over your private network (for example Tailscale serve), never over the public internet. session-board is not published yet, so for most people nothing of this feature shows up.
+The phone board shows the sessions of this computer in your phone's browser: which one is working or waiting for you, what each changed, and the conversation. It is read-only; to answer a session you still use Claude Code (or its Remote Control). It is built into Watchtower and **off by default**.
 
 <img src="media/readme/phone-panel.png" width="620" alt="The phone board panel: an example of the board on a phone, the setup steps from installing Tailscale, and the QR code for the phone">
 
-If session-board runs on this computer, the Sessions view gets a **phone button** while the board is running. Click it (or run *Phone board: make a link for my phone*) to get a QR code, a link and a short code for your phone. Without a running board, the command explains what is missing.
+**Turn it on** with *Phone board: turn on or off* (also in the Sessions view's `…` menu), or by running *Phone board: make a link for my phone*, which asks first. The board then opens on this computer at `127.0.0.1:5290` (setting `phoneBoard.port`), and a panel shows a QR code, a link and a short code for your phone, with the setup steps from scratch: install Tailscale on the phone, sign in with the same account, prepare this computer with `tailscale serve`, scan the code, and optionally turn on notifications. While the board runs, the Sessions view has a **phone button** (a new link) and a **computer button** (*Phone board: open it in this computer's browser*: the same board in this computer's browser; if it says the device is not connected yet, press **Connect this browser** in the notification).
 
-To look at the same board on a computer, click the **computer button** next to it (or run *Phone board: open it in this computer's browser*). It opens the board at the same address as the phone link (this computer's Tailscale name, or this computer's own address through VS Code when there is no Tailscale). A browser connected once goes straight in; if the board says the device is not connected yet, press **Connect this browser** in the notification and Watchtower connects it with a fresh one-time code.
+What it protects:
 
-- **Watchtower never starts or stops the board.** It only asks `127.0.0.1` on the ports in `phoneBoard.ports` (5290 and 5291 by default) for the board's health check, at most once a minute while the Sessions view is open, and accepts only an answer that identifies itself as a board. When the board writes its own `run.json`, only that port is checked.
-- **The panel walks you through it**: an example of the board on a phone at the top, then the steps from scratch — install Tailscale on the phone (QR code, or store links), sign in with the same account, prepare this computer (install links for Windows, Mac and Linux and the `tailscale serve` command; folded away as done when the board already has a private address), scan the board code, and optionally turn on notifications.
-- **The link** comes from the board itself: Watchtower runs `cli.js pair` in the board's folder (`phoneBoard.folder`, or `~/tools/session-board` when it exists; otherwise it asks). The link and code work once, within 10 minutes, and a new link cancels the previous one. They are shown in the panel only, never saved or logged.
-- If more than one board answers (for example a remote window that forwards another computer's board), the panel says that the link is for the board installed in that folder. If the board has no private network address, the panel says the link only opens on this computer and points to Tailscale serve.
-- The QR code is drawn without any download, by a small vendored encoder (MIT, see `vendor/qrcode/NOTICE.md`).
+| | |
+|---|---|
+| Only this computer | The board listens on `127.0.0.1` only; there is no setting to open it wider. Your phone reaches it through your own Tailscale (`tailscale serve`, private to your tailnet). Never use Tailscale Funnel, which would put it on the internet. |
+| Connect each device | A phone or browser gets in only with a one-time code (10 minutes, one use, a new code cancels the previous one, at most 20 tries in 10 minutes). It then keeps an HttpOnly cookie for 180 days; only a hash of it is stored. *Phone board: disconnect all phones and browsers* cancels them all. |
+| Read-only | Nothing on the board can send a message to a session or change a file. Diffs and commits are served only for files and commits that the session itself recorded. |
+| Your data stays here | Codes, connected devices and the notification key live in this computer's extension storage (`globalStorage/board`), never in your settings, the repository or the package. Notifications carry no content, only a signal to look. |
+| Pages | Strict Content-Security-Policy (no outside scripts, styles or frames), text inserted as text. The board's pages are in Korean for now. |
+
+- **Several VS Code windows:** the port works as a lock. The first window serves the board; the others leave it alone, and when that window closes another takes over within 30 seconds. The setting `phoneBoard.enabled` is per computer, so a remote window turns it on for that server only.
+- **A separately installed board (session-board)** keeps working: when one already runs on the port, Watchtower does not start its own and makes links with that board's `cli.js pair` (`phoneBoard.folder`). If the port shows another computer's board (VS Code forwards ports from remote windows) or another program uses it, Watchtower does not start and says to choose another port.
+- Notifications: a session that has waited for you for `phoneBoard.pushDelaySeconds` (60) sends a content-free notification to phones that turned notifications on. 0 turns them off.
+- The board itself comes from the session-board project, copied unchanged into `board/` (`board/SOURCE.txt` records the version; a test checks the copy). The QR code is drawn by a small vendored encoder (MIT, see `vendor/qrcode/NOTICE.md`).
 
 ## Themes
 
@@ -368,8 +375,12 @@ All settings start with `claudeSessionChanges.`
 | `pollSeconds` | 5 | How often to check for new log lines. |
 | `statusBar` | true | Show the status bar summary. |
 | `usageStatusBar` | true | Show Claude Code and Codex plan usage in the status bar. |
-| `phoneBoard.ports` | 5290, 5291 | Ports where an already running phone board is looked for. |
-| `phoneBoard.folder` | (empty) | Folder where session-board is installed. Empty = `~/tools/session-board` when it exists. |
+| `phoneBoard.enabled` | false | Run the phone board inside Watchtower on this computer (127.0.0.1). Per computer. |
+| `phoneBoard.port` | 5290 | Port of the built-in phone board. |
+| `phoneBoard.label` | (computer name) | Name at the top of the phone board. |
+| `phoneBoard.pushDelaySeconds` | 60 | How long a session waits for you before the phone gets a content-free notification. 0 = off. |
+| `phoneBoard.ports` | 5290, 5291 | Ports where a separately installed, already running phone board is looked for. |
+| `phoneBoard.folder` | (empty) | Folder of a separately installed session-board. Empty = `~/tools/session-board` when it exists. |
 | `usageRefreshMinutes` | 15 | While you use Claude, have Claude Code re-check the usage this often (0 = never). |
 | `notifyWaiting` | true | Notify when a session in this folder starts waiting for you. |
 | `notifyOverlap` | true | Notify when a session changes a file that another session also changed. |
@@ -391,6 +402,8 @@ Available from the Command Palette under **Session Watchtower**, and from the me
 |---|---|
 | Phone board: make a link for my phone | QR code, link and code for opening your phone board (also the phone button in the Sessions view). |
 | Phone board: open it in this computer's browser | Opens the same board in this computer's browser and connects the browser if needed (also the computer button in the Sessions view). |
+| Phone board: turn on or off | Turns the built-in phone board on (it asks first) or off. |
+| Phone board: disconnect all phones and browsers | Cancels every connected phone and browser of the built-in board (asks first). |
 | Re-check Claude plan usage now | Have Claude Code fetch your current usage (also a click on the usage item). |
 | Check MCP server status | Open the MCP Servers view and check every server of this folder. |
 | Start a team with a lead session | Copy a request that makes a session the lead: it recommends the team, creates the team board and then takes reports and gives instructions. |
@@ -428,7 +441,7 @@ Claude Code 세션을 여러 개 돌릴 때 **어느 세션이 일하는 중이�
 - **바깥에서 열기**: 데스크톱 알림 같은 다른 프로그램이 `vscode://kms-labs.session-watchtower/open?title=…` 주소로 그 세션의 대화를 열 수 있습니다.
 - **Codex** 세션도 함께 나옵니다.
 - **요금제 사용량**: 상태 표시줄 오른쪽에 Claude Code·Codex 한도를 몇 % 썼는지(예: `Claude 83% · Fable 21% · Codex 23%`) 보여 줍니다. Fable처럼 모델마다 따로 있는 주간 한도도 따로 나옵니다. 마우스를 올리면 칸별 값, 초기화 시각, 모델이 주간 한도의 몇 %까지 쓸 수 있는지, 이번 주 사용 비율, 몇 분 전 값인지가 나옵니다. Claude는 Claude Code가 `~/.claude.json`에 받아 둔 값이고, Claude를 쓰는 동안 15분마다 Claude Code 자신의 명령(`claude -p /usage`, 모델을 부르지 않음)으로 다시 확인하게 합니다. 누르면 바로 확인합니다. 확장은 로그인 정보를 읽지 않습니다. Codex는 마지막 Codex 기록의 값입니다. 세션 숫자도 사용량 바로 옆(오른쪽)에 있습니다. 인터넷에 묻지 않고, 두 파일의 크기·시각만 보다가 바뀌었을 때만 읽어서 CPU를 거의 쓰지 않습니다.
-- **휴대폰 보드 잇기**: 이 컴퓨터에 휴대폰 보드(session-board)가 떠 있으면 세션 창에 휴대폰 단추가 생기고, 누르면 휴대폰으로 열 QR·링크·코드(10분, 한 번만)를 보여 줍니다. 확장은 보드를 켜거나 끄지 않고, 링크·코드는 저장하지 않습니다. 옆의 컴퓨터 단추를 누르면 같은 보드를 이 컴퓨터 브라우저로 열고, 아직 연결 안 된 브라우저면 알림의 "이 브라우저 연결"로 바로 연결합니다.
+- **휴대폰 보드(내장, 기본 꺼짐)**: "휴대폰 보드: 켜기·끄기"로 켜면 이 컴퓨터에만(127.0.0.1:5290) 보드가 열리고, 휴대폰으로 열 QR·링크·코드(10분, 한 번만)와 Tailscale 설정 순서를 보여 줍니다. 휴대폰은 각자의 Tailscale(`tailscale serve`)로 들어오고, 인터넷에 여는 Funnel은 쓰지 않습니다. 기기는 일회용 코드로만 연결되고 "연결된 휴대폰·브라우저 모두 끊기"로 한 번에 끊습니다. 창이 여러 개면 한 창만 보드를 맡고, 그 창이 닫히면 다른 창이 넘겨받습니다. 세션 창의 컴퓨터 단추는 같은 보드를 이 컴퓨터 브라우저로 엽니다. 따로 설치한 session-board가 이미 돌면 그것을 씁니다.
 - **대장이 스스로 역할 나누기**: 그룹마다 팀 명단 파일(세션 이름·도구·상태·메시지 주소·역할·들어오고 빠진 기록)을 확장 저장소에 쓰고 그룹이 바뀔 때마다 새로 씁니다. 대장의 "역할 안내"에 명단 경로와 규칙(새 세션에 역할과 첫 지시, 빠진 세션의 일 나누기, 보드 표에 역할 적기, 메시지 주소로 직접 알리기)이 들어갑니다.
 - **보드 목차 접기**: 그룹 보드의 나를 기다리는 것·세션·지시와 결과·공유 메모 제목을 누르면 접히고, 그룹마다 기억합니다.
 - **MCP 서버 창**: 이 폴더에서 Claude Code가 쓰는 MCP 서버(직접 추가·이 폴더·프로젝트 `.mcp.json`·플러그인·claude.ai 커넥터)와 Codex 서버를 봅니다. "상태 확인"은 누를 때만 `claude mcp list`를 실행합니다(서버마다 한 번 붙어 보고 로컬 서버는 잠깐 실행). 스위치는 Claude Code의 `/mcp disable`과 같은 곳(`~/.claude.json`의 이 폴더 `disabledMcpServers`)에 써서 **이 폴더에서만** 끄고 켭니다. 새로 여는 세션부터 적용되고, 알림과 창 맨 위에 "되돌리기"가 있습니다. 명령·주소·환경 변수 값은 화면에 나오지 않습니다. Codex 서버도 끄고 켤 수 있습니다(`~/.codex/config.toml`의 `enabled`, 모든 폴더에 적용, 처음 바꿀 때 원본을 `config.toml.watchtower-backup`으로 남김).

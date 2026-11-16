@@ -12,6 +12,7 @@ const { parsePatch, LIVE_MS, codexPatchText } = require('./scanner');
 const mcp = require('./mcp');
 const usage = require('./usage');
 const phoneboard = require('./phoneboard');
+const boardhost = require('./boardhost');
 
 // 화면 글자: 영어 원문 + l10n/bundle.l10n.ko.json(한국어). 날짜·시간 형식만 언어별로 직접 만든다.
 const L = (message, ...args) => vscode.l10n.t(message, ...args);
@@ -73,6 +74,10 @@ function cfg() {
     usageStatusBar: c.get('usageStatusBar', true) !== false,
     phoneBoardPorts: (Array.isArray(c.get('phoneBoard.ports')) ? c.get('phoneBoard.ports') : [5290, 5291]).map(Number).filter((n) => Number.isInteger(n) && n > 0 && n < 65536).slice(0, 8),
     phoneBoardFolder: String(c.get('phoneBoard.folder', '') || ''),
+    phoneBoardEnabled: c.get('phoneBoard.enabled', false) === true,
+    phoneBoardPort: (() => { const v = Number(c.get('phoneBoard.port', 5290)); return Number.isInteger(v) && v >= 1024 && v < 65536 ? v : 5290; })(),
+    phoneBoardLabel: String(c.get('phoneBoard.label', '') || '').slice(0, 30),
+    phoneBoardPushDelay: Math.max(0, Math.min(3600, Number(c.get('phoneBoard.pushDelaySeconds', 60)) || 0)),
     usageRefreshMinutes: (() => { const v = Number(c.get('usageRefreshMinutes', 15)); return !isFinite(v) || v <= 0 ? 0 : Math.max(5, Math.min(240, v)); })(),
     includeCodex: c.get('includeCodex', true) !== false,
     attentionDir: expandHome(String(c.get('attentionMarkerDir', '~/.cache/claude-attention') || '')),
@@ -3644,6 +3649,7 @@ function startTimer() {
   if (timer) clearInterval(timer);
   timer = setInterval(() => {
     takeOpenRequests(); // 다른 창이 맡긴 대화 열기(요청 폴더 하나만 본다)
+    if (boardHost && (cfg().phoneBoardEnabled || boardHost.state() !== 'off')) syncBuiltInBoard(false); // 30초에 한 번: 다른 창이 맡던 보드가 꺼졌으면 넘겨받기
     if (Date.now() - windowEntryAt > 10 * 60000) writeWindowEntry();
     updateUsage(); // 파일 시각만 본다(바뀌었을 때만 읽음)
     if (checkMemoRequests()) writeTeamRosters(); // 대장이 보드 연결을 부탁했는지(그룹마다 파일 하나가 있는지만 본다), 결과를 명단에 적는다
@@ -3892,7 +3898,8 @@ function refreshPhoneBoards(force) {
   if (!force && Date.now() - phoneCheckedAt < PHONE_CHECK_MS) return Promise.resolve(phoneBoards);
   phoneCheckedAt = Date.now();
   // 보드가 스스로 적어 둔 실행 정보가 있으면 그 포트 하나만(원격 창에서 넘겨받은 다른 컴퓨터의 포트를 착각하지 않게), 없으면 설정한 포트들
-  const run = phoneboard.localRun();
+  // 이 확장 안의 보드(설정 phoneBoard.enabled)가 이 창이나 이 컴퓨터의 다른 창에서 돌면 그것, 아니면 따로 설치한 보드의 실행 정보
+  const run = builtInRun() || phoneboard.localRun();
   // 이 컴퓨터에 보드가 설치돼 있지 않으면(실행 정보도, cli.js 폴더도 없음) 포트를 보지 않는다.
   // 원격 창이 다른 컴퓨터 보드를 같은 포트로 넘겨받은 곳이나, 보드를 모르는 사람의 컴퓨터에서 휴대폰 단추가 뜨지 않게
   const installed = run || phoneboard.boardFolder(cfg().phoneBoardFolder);
@@ -3909,19 +3916,19 @@ function refreshPhoneBoards(force) {
 }
 
 async function phoneBoardPair() {
-  let folder = phoneboard.boardFolder(cfg().phoneBoardFolder);
+  // 1) 이 확장 안의 보드가 돌고 있으면(이 창이든 이 컴퓨터의 다른 창이든) 확장이 직접 연결 코드를 만든다
+  const built = builtInRun();
+  if (built) return pairBuiltIn(built);
+  // 2) 따로 설치한 보드(session-board)가 있으면 그 폴더의 cli.js pair
+  const folder = phoneboard.boardFolder(cfg().phoneBoardFolder);
   if (!folder) {
-    // 처음 쓰는 사람: 휴대폰 보드는 따로 설치하는 프로그램이라는 것부터 알린다(설치한 사람만 폴더를 고르면 된다)
-    const pick = L('Choose the folder…');
-    const more = L('How it works');
-    const b = await vscode.window.showInformationMessage(L('No phone board (session-board) was found on this computer. It is a separate program that is not published yet; if you installed it in another folder, choose that folder (the one with cli.js).'), pick, more);
-    if (b === more) { vscode.commands.executeCommand('extension.open', ctx.extension.id); return; }
-    if (b !== pick) return;
-    const f = await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false, openLabel: L('Use this folder') });
-    if (!f || !f[0]) return;
-    folder = phoneboard.boardFolder(f[0].fsPath);
-    if (!folder) { vscode.window.showWarningMessage(L('There is no cli.js in that folder.')); return; }
-    await vscode.workspace.getConfiguration(CFG).update('phoneBoard.folder', folder, vscode.ConfigurationTarget.Global);
+    // 3) 보드가 없다: 켜져 있는데 못 떴으면 이유를, 꺼져 있으면 켤지 묻는다
+    if (cfg().phoneBoardEnabled) {
+      const st = await syncBuiltInBoard(true);
+      if (builtInRun()) return pairBuiltIn(builtInRun());
+      return explainBoardProblem(st);
+    }
+    return offerBoardOn();
   }
   const boards = await refreshPhoneBoards(true);
   if (!boards.length) {
@@ -3938,6 +3945,97 @@ async function phoneBoardPair() {
     return;
   }
   showPhonePanel(r, boards, folder);
+}
+
+// ---------- 휴대폰 보드(이 확장 안에서 켜기) ----------
+// 설정 phoneBoard.enabled(기본 꺼짐, 컴퓨터마다)가 켜지면 board/(session-board 복사본)를 127.0.0.1:<phoneBoard.port>에 연다.
+// 창이 여러 개면 포트가 자물쇠라 한 창만 맡고, 그 창이 닫히면 다른 창이 30초 안에 넘겨받는다. 상태 파일(연결 코드·기기·알림 열쇠)은
+// 이 컴퓨터의 확장 저장소(globalStorage/board)에만 생긴다.
+let boardHost = null;
+let boardSyncAt = 0;
+let boardRunKey = ''; // 지금 맡은 보드를 연 설정(포트·이름·알림 시간). 같으면 설정 바뀜 알림이 와도 다시 열지 않는다
+const boardKey = () => { const c = cfg(); return [c.phoneBoardPort, c.phoneBoardLabel, c.phoneBoardPushDelay].join('|'); };
+function builtInDir() { return ctx && ctx.globalStorageUri ? path.join(ctx.globalStorageUri.fsPath, 'board') : null; }
+function builtInRun() { const d = builtInDir(); return d ? boardhost.liveRun(d) : null; }
+function boardOptions() {
+  const c = cfg();
+  return {
+    port: c.phoneBoardPort, label: c.phoneBoardLabel, pushDelayS: c.phoneBoardPushDelay,
+    stateDir: builtInDir(), standaloneDir: process.env.BOARD_STATE_DIR || path.join(os.homedir(), '.config', 'session-board'),
+    groupsFile: groupsFile(), archiveFile: archiveFile(), attentionDir: c.attentionDir, registryDir: path.join(os.homedir(), '.claude', 'sessions'),
+  };
+}
+
+// 켜짐·꺼짐 설정에 맞춘다. force가 아니면 30초에 한 번까지(다른 창이 맡던 보드가 꺼졌는지 보는 주기 확인)
+function syncBuiltInBoard(force) {
+  if (!ctx || !boardHost) return Promise.resolve('off');
+  if (!force && Date.now() - boardSyncAt < 30000) return Promise.resolve(boardHost.state());
+  boardSyncAt = Date.now();
+  const c = cfg();
+  if (!c.phoneBoardEnabled) return boardHost.ensure(false);
+  if (boardHost.state() === 'mine' && boardHost.port() === c.phoneBoardPort) return Promise.resolve('mine');
+  const key = boardKey();
+  return boardHost.ensure(true, boardOptions()).then((st) => { if (st === 'mine') boardRunKey = key; refreshPhoneBoards(true); return st; });
+}
+
+async function offerBoardOn() {
+  const on = L('Turn on');
+  const more = L('How it works');
+  const b = await vscode.window.showInformationMessage(L('The phone board is off. Turn it on? It shows these sessions, their changed files and conversations in your phone\'s browser, read-only. It opens only on this computer; your phone reaches it through your own Tailscale.'), on, more);
+  if (b === more) { vscode.commands.executeCommand('extension.open', ctx.extension.id); return undefined; }
+  if (b !== on) return undefined;
+  await vscode.workspace.getConfiguration(CFG).update('phoneBoard.enabled', true, vscode.ConfigurationTarget.Global);
+  const st = await syncBuiltInBoard(true);
+  if (builtInRun()) return pairBuiltIn(builtInRun());
+  if (st === 'local') return phoneBoardPair(); // 이 컴퓨터에 따로 설치한 보드가 이미 그 포트에서 돈다
+  return explainBoardProblem(st);
+}
+
+async function explainBoardProblem(st) {
+  const port = cfg().phoneBoardPort;
+  const msg = st === 'foreign' ? L('Port {0} already shows a phone board from another computer (VS Code forwards it from a remote window). Choose another port in the setting phoneBoard.port.', port)
+    : st === 'busy' ? L('Another program uses port {0}. Choose another port in the setting phoneBoard.port.', port)
+      : st === 'local' ? L('A phone board already runs on port {0} on this computer, but its folder is not known. Set phoneBoard.folder, or stop that board.', port)
+        : L('The phone board could not start: {0}', boardHost ? boardHost.detail() || st : st);
+  const open = L('Open the setting');
+  const b = await vscode.window.showWarningMessage(msg, open);
+  if (b === open) vscode.commands.executeCommand('workbench.action.openSettings', CFG + '.phoneBoard.' + (st === 'local' ? 'folder' : 'port'));
+  return undefined;
+}
+
+async function phoneBoardToggle() {
+  if (!cfg().phoneBoardEnabled) return offerBoardOn();
+  await vscode.workspace.getConfiguration(CFG).update('phoneBoard.enabled', false, vscode.ConfigurationTarget.Global);
+  await syncBuiltInBoard(true);
+  refreshPhoneBoards(true);
+  vscode.window.showInformationMessage(L('The phone board is off. Connected phones keep their connection and see it again when you turn it back on.'));
+  return undefined;
+}
+
+async function phoneBoardRevoke() {
+  const dir = builtInDir();
+  const n = dir ? boardhost.deviceCount(dir) : 0;
+  if (!n) { vscode.window.showInformationMessage(L('No phone or browser is connected to this phone board.')); return undefined; }
+  const yes = L('Disconnect all');
+  const b = await vscode.window.showWarningMessage(L('Disconnect all {0} connected phones and browsers? Each needs a new link to connect again.', n), { modal: true }, yes);
+  if (b !== yes) return undefined;
+  const gone = boardhost.revokeAll(dir);
+  vscode.window.showInformationMessage(L('Disconnected {0} device(s).', gone));
+  return undefined;
+}
+
+const pad2 = (n) => String(n).padStart(2, '0');
+// 이 확장 안의 보드로 연결 코드를 만들어 휴대폰 패널을 연다(링크 주소는 보드 cli.js pair와 같은 방법: Tailscale 이름, 없으면 127.0.0.1)
+async function pairBuiltIn(run) {
+  const boards = await refreshPhoneBoards(true);
+  let made;
+  try { made = boardhost.pairCode(builtInDir()); } catch (e) { vscode.window.showWarningMessage(L('Could not make a link: {0}', String((e && e.message) || e))); return undefined; }
+  const ts = await phoneboard.publicBase();
+  const base = ts || `http://127.0.0.1:${run.port}`;
+  const t = new Date(made.exp);
+  const r = { ok: true, url: base + '/pair?c=' + made.code, code: made.code, until: `${t.getHours()}:${pad2(t.getMinutes())}:${pad2(t.getSeconds())}`, local: !ts };
+  showPhonePanel(r, boards.length ? boards : [{ port: run.port, label: run.label, local: true }], null);
+  return undefined;
 }
 
 // 보드를 이 컴퓨터 브라우저로 연다(휴대폰 말고 컴퓨터로도 보기).
@@ -3957,6 +4055,11 @@ async function phoneBoardOpen() {
   const connect = L('Connect this browser');
   const b = await vscode.window.showInformationMessage(L('Opened the phone board in this computer\'s browser. If the page says this device is not connected yet, press "Connect this browser".'), connect);
   if (b !== connect) return undefined;
+  const built = builtInRun();
+  if (built && built.port === board.port) {
+    const made = boardhost.pairCode(builtInDir());
+    return vscode.env.openExternal(vscode.Uri.parse(base + '/pair?c=' + encodeURIComponent(made.code)));
+  }
   const folder = phoneboard.boardFolder(cfg().phoneBoardFolder);
   if (!folder) return phoneBoardPair(); // 보드 폴더를 모르면 고르는 안내부터
   const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: L('Connecting this browser to the phone board…') }, () => phoneboard.pair(folder));
@@ -4508,6 +4611,8 @@ function activate(context) {
     vscode.commands.registerCommand('claudeSessionChanges.refreshUsage', () => refreshClaudeUsage(true)),
     vscode.commands.registerCommand('claudeSessionChanges.phoneBoardPair', () => phoneBoardPair()),
     vscode.commands.registerCommand('claudeSessionChanges.phoneBoardOpen', () => phoneBoardOpen()),
+    vscode.commands.registerCommand('claudeSessionChanges.phoneBoardToggle', () => phoneBoardToggle()),
+    vscode.commands.registerCommand('claudeSessionChanges.phoneBoardRevoke', () => phoneBoardRevoke()),
     vscode.commands.registerCommand('claudeSessionChanges.checkMcp', () => { vscode.commands.executeCommand(MCP_VIEW + '.focus'); return mcpCheck(); }),
     vscode.commands.registerCommand('claudeSessionChanges.openSessionChanges', (arg) => openSessionChanges(arg)),
     vscode.commands.registerCommand('claudeSessionChanges.archiveSession', (arg) => setArchived(arg, true)),
@@ -4551,6 +4656,11 @@ function activate(context) {
       if (e.affectsConfiguration('claudeCode.archiveInactiveSessions')) requestScan(true); // 다른 폴더 세션을 읽는 기간도 함께 바뀐다
       if (e.affectsConfiguration('workbench.reduceMotion')) updateExplorerMarks();
       if (!e.affectsConfiguration(CFG)) return;
+      if (boardHost && ['enabled', 'port', 'label', 'pushDelaySeconds'].some((k) => e.affectsConfiguration(CFG + '.phoneBoard.' + k))) {
+        // 켜기·끄기, 포트·이름·알림 시간이 바뀌면 보드를 새 설정으로 다시 연다(꺼졌으면 닫기만). 이미 그 설정으로 돌고 있으면 그대로 둔다
+        const same = cfg().phoneBoardEnabled && boardHost.state() === 'mine' && boardRunKey === boardKey();
+        if (!same) boardHost.ensure(false).then(() => syncBuiltInBoard(true));
+      }
       startTimer();
       if (['lookbackHours', 'includeCodex', 'attentionMarkerDir', 'sessionListDays', 'archiveAfter'].some((k) => e.affectsConfiguration(CFG + '.' + k))) requestScan(true);
       else { rebuild(); updateStatusBar(); updateUsage(); }
@@ -4560,6 +4670,8 @@ function activate(context) {
     vscode.window.onDidChangeWindowState((e) => { if (e && e.focused) takeOpenRequests(); }),
   );
   writeWindowEntry();
+  boardHost = boardhost.createHost({ log: { info: () => {}, error: (...a) => console.error('[phone board]', ...a) } });
+  if (cfg().phoneBoardEnabled) syncBuiltInBoard(true);
   const takeSoon = setTimeout(takeOpenRequests, 1500); // 다른 창이 대화를 열어 달라며 이 창을 막 열었을 수 있다
   if (takeSoon.unref) takeSoon.unref();
   startTimer();
@@ -4572,6 +4684,7 @@ function activate(context) {
 function deactivate() {
   if (timer) clearInterval(timer);
   removeWindowEntry();
+  const boardDone = boardHost ? boardHost.stop() : Promise.resolve();
   if (liveTimer) { clearTimeout(liveTimer); liveTimer = null; }
   if (tabTimer) { clearTimeout(tabTimer); tabTimer = null; }
   if (boardTimer) { clearTimeout(boardTimer); boardTimer = null; }
@@ -4581,11 +4694,11 @@ function deactivate() {
   if (searchWorker) { try { searchWorker.terminate(); } catch { /* 이미 끝남 */ } searchWorker = null; }
   const w = worker;
   worker = null;
-  if (!w) return undefined;
-  return new Promise((resolve) => {
+  if (!w) return boardDone;
+  return Promise.all([boardDone, new Promise((resolve) => {
     try { w.postMessage({ type: 'save', opts: workerOpts() }); } catch { /* 무시 */ }
     setTimeout(() => { w.terminate().finally(resolve); }, 400);
-  });
+  })]).then(() => undefined);
 }
 
-module.exports = { activate, deactivate, _test: { takeOpenRequests: () => takeOpenRequests(), canOpenSession: (s) => canOpenSession(s), usageRefreshing: () => usageRefreshing, parseBoardRoles, hunksToSides, applyEdit, displayDir, fmtTime, sidesForCodex, sameTitle, sessionKeyOf, setCodexCli: (v) => { codexCli = v; hasCodexCli.fixed = true; }, setClaudeBin: (p) => { claudeBinFixed = p; } } };
+module.exports = { activate, deactivate, _test: { boardState: () => (boardHost ? boardHost.state() : 'off'), syncBuiltInBoard: (f) => syncBuiltInBoard(f), takeOpenRequests: () => takeOpenRequests(), canOpenSession: (s) => canOpenSession(s), usageRefreshing: () => usageRefreshing, parseBoardRoles, hunksToSides, applyEdit, displayDir, fmtTime, sidesForCodex, sameTitle, sessionKeyOf, setCodexCli: (v) => { codexCli = v; hasCodexCli.fixed = true; }, setClaudeBin: (p) => { claudeBinFixed = p; } } };

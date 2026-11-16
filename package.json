@@ -2,7 +2,7 @@
   "name": "session-watchtower",
   "displayName": "Session Watchtower for Claude Code",
   "description": "%description%",
-  "version": "0.30.0",
+  "version": "0.31.0",
   "scripts": {
     "test": "node --test test/*.test.js",
     "shot": "bash tools/screenshot/run.sh"
@@ -221,6 +221,17 @@
         "icon": "$(device-desktop)"
       },
       {
+        "command": "claudeSessionChanges.phoneBoardToggle",
+        "title": "%command.phoneBoardToggle%",
+        "category": "Session Watchtower",
+        "icon": "$(broadcast)"
+      },
+      {
+        "command": "claudeSessionChanges.phoneBoardRevoke",
+        "title": "%command.phoneBoardRevoke%",
+        "category": "Session Watchtower"
+      },
+      {
         "command": "claudeSessionChanges.refreshUsage",
         "title": "%command.refreshUsage%",
         "category": "Session Watchtower",
@@ -352,6 +363,11 @@
           "command": "claudeSessionChanges.planTeam",
           "when": "view == claudeSessionChanges.sessions",
           "group": "0_groups@0"
+        },
+        {
+          "command": "claudeSessionChanges.phoneBoardToggle",
+          "when": "view == claudeSessionChanges.sessions",
+          "group": "2_phone@1"
         }
       ],
       "view/item/context": [
@@ -481,10 +497,43 @@
           "default": true,
           "description": "%config.usageStatusBar%"
         },
+        "claudeSessionChanges.phoneBoard.enabled": {
+          "type": "boolean",
+          "default": false,
+          "scope": "machine",
+          "markdownDescription": "%config.phoneBoardEnabled%"
+        },
+        "claudeSessionChanges.phoneBoard.port": {
+          "type": "number",
+          "default": 5290,
+          "minimum": 1024,
+          "maximum": 65535,
+          "scope": "machine",
+          "description": "%config.phoneBoardPort%"
+        },
+        "claudeSessionChanges.phoneBoard.label": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "%config.phoneBoardLabel%"
+        },
+        "claudeSessionChanges.phoneBoard.pushDelaySeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 0,
+          "maximum": 3600,
+          "scope": "machine",
+          "description": "%config.phoneBoardPushDelay%"
+        },
         "claudeSessionChanges.phoneBoard.ports": {
           "type": "array",
-          "items": { "type": "number" },
-          "default": [5290, 5291],
+          "items": {
+            "type": "number"
+          },
+          "default": [
+            5290,
+            5291
+          ],
           "description": "%config.phoneBoardPorts%"
         },
         "claudeSessionChanges.phoneBoard.folder": {
@@ -611,6 +660,9 @@
     "mcp.js",
     "usage.js",
     "phoneboard.js",
+    "boardhost.js",
+    "board-worker.js",
+    "board/**",
     "vendor/**",
     "media/icon.svg",
     "media/logo.png",

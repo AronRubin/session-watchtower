@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.31.0
+
+- **The phone board is built in.** Turn it on with *Phone board: turn on or off* (also in the Sessions view's `…` menu); no separate program to install. It is off by default and, when on, listens on this computer only (`127.0.0.1:5290`, setting `phoneBoard.port`); your phone reaches it through your own Tailscale (`tailscale serve`, never Funnel). Phones and browsers connect with a one-time code, and *Phone board: disconnect all phones and browsers* cancels them all.
+- With several VS Code windows, the first one serves the board and another takes over within 30 seconds when it closes. `phoneBoard.enabled` is a per-computer setting, so a remote window turns it on for that server only.
+- A separately installed session-board keeps working: if it already runs on the port, Watchtower uses it instead of starting its own. If the port shows another computer's board (forwarded by VS Code) or another program, Watchtower says so and asks for another port.
+- New settings: `phoneBoard.enabled`, `phoneBoard.port`, `phoneBoard.label` (name at the top of the board) and `phoneBoard.pushDelaySeconds` (notification delay, 0 = off). The board comes from the session-board project, copied unchanged into `board/` (`board/SOURCE.txt`). The board's pages are in Korean for now.
+
 ## 0.30.0
 
 - **See the phone board on a computer too.** The Sessions view has a computer button next to the phone button (and the command *Phone board: open it in this computer's browser*). It opens the board at the same address as the phone link, so a browser connected once goes straight in. If the board says the device is not connected yet, **Connect this browser** in the notification connects it with a fresh one-time code. Without Tailscale it opens this computer's own board address through VS Code, which also works from a remote window.
