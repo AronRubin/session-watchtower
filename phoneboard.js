@@ -77,6 +77,20 @@ function pair(folder, timeoutMs = PAIR_MS) {
   });
 }
 
+// 보드를 휴대폰·다른 컴퓨터에서 여는 주소. 보드의 `cli.js pair`와 같은 방법: 이 컴퓨터의 Tailscale 이름(https://<이름>).
+// Tailscale이 없으면 null(그때는 이 컴퓨터의 127.0.0.1 주소를 쓴다)
+function publicBase(timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    execFile('tailscale', ['status', '--json'], { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, windowsHide: true }, (err, out) => {
+      if (err) return resolve(null);
+      try {
+        const dns = String((JSON.parse(out).Self || {}).DNSName || '').replace(/\.$/, '');
+        resolve(/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/.test(dns) ? 'https://' + dns : null);
+      } catch { resolve(null); }
+    });
+  });
+}
+
 // QR(오류 정정 M)을 SVG로. 흰 바탕에 검은 칸이라 어두운 테마에서도 휴대폰이 읽는다
 function qrSvg(text, cell = 6) {
   const QRCode = require('./vendor/qrcode');
@@ -92,4 +106,4 @@ function qrSvg(text, cell = 6) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
 }
 
-module.exports = { probe, findBoards, localRun, boardFolder, parsePair, pair, qrSvg };
+module.exports = { probe, findBoards, localRun, boardFolder, parsePair, pair, publicBase, qrSvg };

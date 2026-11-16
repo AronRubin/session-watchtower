@@ -43,7 +43,9 @@ function install({ extDir, language = 'en', workspace, config = {}, workspaceSch
     ProgressLocation: { Notification: 15 },
     l10n: { t: (msg, ...args) => (bundle[msg] || msg).replace(/\{(\d+)\}/g, (m, i) => String(args[+i])) },
     extensions: { getExtension: (id) => ((state.installedExtensions || []).includes(id) ? { id } : undefined) },
-    env: { language, uriScheme: 'vscode', clipboard: { writeText: async (t) => { state.clipboard = t; } }, openExternal: async (u) => { calls.push(['openExternal', String(u)]); } },
+    env: { language, uriScheme: 'vscode', clipboard: { writeText: async (t) => { state.clipboard = t; } }, openExternal: async (u) => { calls.push(['openExternal', String(u)]); },
+      // 원격 창이면 VS Code가 이 컴퓨터 포트를 사용자 PC로 넘긴 주소를 준다: 시험은 state.externalUri로 정한다
+      asExternalUri: async (u) => { calls.push(['asExternalUri', String(u)]); return state.externalUri ? Uri.parse(state.externalUri) : u; } },
     window: {
       createTreeView: (id, o) => {
         const view = {

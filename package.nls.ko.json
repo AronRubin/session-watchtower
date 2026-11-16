@@ -63,5 +63,6 @@
   "command.refreshUsage": "Claude 요금제 사용량 지금 다시 확인",
   "config.phoneBoardPorts": "이 컴퓨터에서 이미 떠 있는 휴대폰 보드(session-board)를 찾을 포트들. 확장은 보드를 켜거나 끄지 않습니다.",
   "config.phoneBoardFolder": "session-board를 설치한 폴더(cli.js가 있는 곳). 비어 있으면 ~/tools/session-board가 있을 때 그것을 쓰고, 없으면 물어봅니다.",
+  "command.phoneBoardOpen": "휴대폰 보드: 이 컴퓨터 브라우저로 열기",
   "command.phoneBoardPair": "휴대폰 보드: 내 휴대폰 연결 링크 만들기"
 }

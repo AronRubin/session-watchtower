@@ -32,6 +32,23 @@ fs.writeFileSync(path.join(folder, 'cli.js'), [
   "console.log('휴대폰: 이 링크를 Chrome·Safari에서 열기');",
 ].join('\n'));
 
+// Tailscale 대역: 보드 cli.js pair와 같은 방법(tailscale status --json의 Self.DNSName)으로 바깥 주소를 정한다. 진짜 tailscale을 부르지 않게 PATH 앞에 둔다
+const fakeBin = path.join(home, 'fake-bin');
+fs.mkdirSync(fakeBin, { recursive: true });
+const tsScript = path.join(fakeBin, 'tailscale');
+const setTailscale = (body) => { fs.writeFileSync(tsScript, '#!/bin/sh\n' + body + '\n'); fs.chmodSync(tsScript, 0o755); };
+setTailscale(`echo '{"Self":{"DNSName":"board.example.ts.net."}}'`);
+process.env.PATH = fakeBin + path.delimiter + process.env.PATH;
+
+test('바깥 주소: Tailscale 이름이면 https 주소, 이상한 이름·Tailscale 없음은 null', { skip: process.platform === 'win32' }, async () => {
+  assert.strictEqual(await pb.publicBase(), 'https://board.example.ts.net');
+  setTailscale(`echo '{"Self":{"DNSName":"evil host;rm -rf ~"}}'`);
+  assert.strictEqual(await pb.publicBase(), null);
+  setTailscale('exit 1');
+  assert.strictEqual(await pb.publicBase(), null);
+  setTailscale(`echo '{"Self":{"DNSName":"board.example.ts.net."}}'`);
+});
+
 let servers = [];
 let extRef = null;
 test.after(() => { for (const s of servers) s.close(); if (extRef) { try { extRef.deactivate(); } catch { /* 이미 꺼짐 */ } } });
@@ -151,6 +168,31 @@ test('확장: 보드가 켜져 있으면 세션 창에 단추, 누르면 QR·코
   panel.send({ type: 'copyCode' });
   await sleep(20);
   assert.notStrictEqual(stub.state.clipboard, 'AB12CD34', '쓴 코드는 더 복사하지 않는다');
+  // 컴퓨터로도 보기: 세션 창의 컴퓨터 단추 → 휴대폰 연결 링크와 같은 주소(Tailscale 이름)를 연다. 연결 안 된 브라우저면 알림 단추로 새 코드를 써서 연결
+  assert.match(web.view.webview.html, /id="btnBoardPc" hidden/);
+  assert.strictEqual(web.lastPayload().strings.boardPc, 'Open the phone board in this computer\'s browser');
+  stub.calls.length = 0;
+  web.send({ type: 'boardPc' });
+  const until6 = Date.now() + 9000;
+  while (Date.now() < until6 && !stub.calls.some((c) => c[0] === 'info' && /Opened the phone board/.test(c[1]))) await sleep(50);
+  assert.deepStrictEqual(stub.calls.filter((c) => c[0] === 'openExternal').map((c) => c[1]), ['https://board.example.ts.net/'], '이미 연결한 브라우저는 그대로 들어가게 보드 주소만');
+  stub.calls.length = 0;
+  stub.state.answer = (m, btns) => (/Opened the phone board/.test(m) ? btns[0] : undefined);
+  await stub.commands.get('claudeSessionChanges.phoneBoardOpen')();
+  stub.state.answer = undefined;
+  assert.deepStrictEqual(stub.calls.filter((c) => c[0] === 'openExternal').map((c) => c[1]), ['https://board.example.ts.net/', 'https://board.example.ts.net/pair?c=AB12CD34'], '"이 브라우저 연결"을 누르면 같은 주소로 새 코드를 보낸다');
+  // Tailscale이 없으면 이 컴퓨터 주소를 VS Code가 넘겨 준 주소로 연다(원격 창)
+  setTailscale('exit 1');
+  stub.state.externalUri = 'http://localhost:61234/';
+  stub.calls.length = 0;
+  stub.state.answer = (m, btns) => (/Opened the phone board/.test(m) ? btns[0] : undefined);
+  await stub.commands.get('claudeSessionChanges.phoneBoardOpen')();
+  stub.state.answer = undefined;
+  assert.ok(/^http:\/\/127\.0\.0\.1:\d+\/$/.test(stub.calls.find((c) => c[0] === 'asExternalUri')[1]), '보드 포트의 이 컴퓨터 주소를 넘긴다');
+  assert.deepStrictEqual(stub.calls.filter((c) => c[0] === 'openExternal').map((c) => c[1]), ['http://localhost:61234/', 'http://localhost:61234/pair?c=AB12CD34']);
+  stub.state.externalUri = undefined;
+  setTailscale(`echo '{"Self":{"DNSName":"board.example.ts.net."}}'`);
+
   // 보드가 꺼지면 단추가 사라지고, 링크를 만들려 하면 안내한다
   a.close(); b.close();
   stub.calls.length = 0;

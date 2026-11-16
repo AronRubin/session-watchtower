@@ -302,6 +302,8 @@ The phone board shows the sessions of this computer in your phone's browser: whi
 
 If session-board runs on this computer, the Sessions view gets a **phone button** while the board is running. Click it (or run *Phone board: make a link for my phone*) to get a QR code, a link and a short code for your phone. Without a running board, the command explains what is missing.
 
+To look at the same board on a computer, click the **computer button** next to it (or run *Phone board: open it in this computer's browser*). It opens the board at the same address as the phone link (this computer's Tailscale name, or this computer's own address through VS Code when there is no Tailscale). A browser connected once goes straight in; if the board says the device is not connected yet, press **Connect this browser** in the notification and Watchtower connects it with a fresh one-time code.
+
 - **Watchtower never starts or stops the board.** It only asks `127.0.0.1` on the ports in `phoneBoard.ports` (5290 and 5291 by default) for the board's health check, at most once a minute while the Sessions view is open, and accepts only an answer that identifies itself as a board. When the board writes its own `run.json`, only that port is checked.
 - **The panel walks you through it**: an example of the board on a phone at the top, then the steps from scratch — install Tailscale on the phone (QR code, or store links), sign in with the same account, prepare this computer (install links for Windows, Mac and Linux and the `tailscale serve` command; folded away as done when the board already has a private address), scan the board code, and optionally turn on notifications.
 - **The link** comes from the board itself: Watchtower runs `cli.js pair` in the board's folder (`phoneBoard.folder`, or `~/tools/session-board` when it exists; otherwise it asks). The link and code work once, within 10 minutes, and a new link cancels the previous one. They are shown in the panel only, never saved or logged.
@@ -388,6 +390,7 @@ Available from the Command Palette under **Session Watchtower**, and from the me
 | Command | What it does |
 |---|---|
 | Phone board: make a link for my phone | QR code, link and code for opening your phone board (also the phone button in the Sessions view). |
+| Phone board: open it in this computer's browser | Opens the same board in this computer's browser and connects the browser if needed (also the computer button in the Sessions view). |
 | Re-check Claude plan usage now | Have Claude Code fetch your current usage (also a click on the usage item). |
 | Check MCP server status | Open the MCP Servers view and check every server of this folder. |
 | Start a team with a lead session | Copy a request that makes a session the lead: it recommends the team, creates the team board and then takes reports and gives instructions. |
@@ -425,7 +428,7 @@ Claude Code 세션을 여러 개 돌릴 때 **어느 세션이 일하는 중이�
 - **바깥에서 열기**: 데스크톱 알림 같은 다른 프로그램이 `vscode://kms-labs.session-watchtower/open?title=…` 주소로 그 세션의 대화를 열 수 있습니다.
 - **Codex** 세션도 함께 나옵니다.
 - **요금제 사용량**: 상태 표시줄 오른쪽에 Claude Code·Codex 한도를 몇 % 썼는지(예: `Claude 83% · Fable 21% · Codex 23%`) 보여 줍니다. Fable처럼 모델마다 따로 있는 주간 한도도 따로 나옵니다. 마우스를 올리면 칸별 값, 초기화 시각, 모델이 주간 한도의 몇 %까지 쓸 수 있는지, 이번 주 사용 비율, 몇 분 전 값인지가 나옵니다. Claude는 Claude Code가 `~/.claude.json`에 받아 둔 값이고, Claude를 쓰는 동안 15분마다 Claude Code 자신의 명령(`claude -p /usage`, 모델을 부르지 않음)으로 다시 확인하게 합니다. 누르면 바로 확인합니다. 확장은 로그인 정보를 읽지 않습니다. Codex는 마지막 Codex 기록의 값입니다. 세션 숫자도 사용량 바로 옆(오른쪽)에 있습니다. 인터넷에 묻지 않고, 두 파일의 크기·시각만 보다가 바뀌었을 때만 읽어서 CPU를 거의 쓰지 않습니다.
-- **휴대폰 보드 잇기**: 이 컴퓨터에 휴대폰 보드(session-board)가 떠 있으면 세션 창에 휴대폰 단추가 생기고, 누르면 휴대폰으로 열 QR·링크·코드(10분, 한 번만)를 보여 줍니다. 확장은 보드를 켜거나 끄지 않고, 링크·코드는 저장하지 않습니다.
+- **휴대폰 보드 잇기**: 이 컴퓨터에 휴대폰 보드(session-board)가 떠 있으면 세션 창에 휴대폰 단추가 생기고, 누르면 휴대폰으로 열 QR·링크·코드(10분, 한 번만)를 보여 줍니다. 확장은 보드를 켜거나 끄지 않고, 링크·코드는 저장하지 않습니다. 옆의 컴퓨터 단추를 누르면 같은 보드를 이 컴퓨터 브라우저로 열고, 아직 연결 안 된 브라우저면 알림의 "이 브라우저 연결"로 바로 연결합니다.
 - **대장이 스스로 역할 나누기**: 그룹마다 팀 명단 파일(세션 이름·도구·상태·메시지 주소·역할·들어오고 빠진 기록)을 확장 저장소에 쓰고 그룹이 바뀔 때마다 새로 씁니다. 대장의 "역할 안내"에 명단 경로와 규칙(새 세션에 역할과 첫 지시, 빠진 세션의 일 나누기, 보드 표에 역할 적기, 메시지 주소로 직접 알리기)이 들어갑니다.
 - **보드 목차 접기**: 그룹 보드의 나를 기다리는 것·세션·지시와 결과·공유 메모 제목을 누르면 접히고, 그룹마다 기억합니다.
 - **MCP 서버 창**: 이 폴더에서 Claude Code가 쓰는 MCP 서버(직접 추가·이 폴더·프로젝트 `.mcp.json`·플러그인·claude.ai 커넥터)와 Codex 서버를 봅니다. "상태 확인"은 누를 때만 `claude mcp list`를 실행합니다(서버마다 한 번 붙어 보고 로컬 서버는 잠깐 실행). 스위치는 Claude Code의 `/mcp disable`과 같은 곳(`~/.claude.json`의 이 폴더 `disabledMcpServers`)에 써서 **이 폴더에서만** 끄고 켭니다. 새로 여는 세션부터 적용되고, 알림과 창 맨 위에 "되돌리기"가 있습니다. 명령·주소·환경 변수 값은 화면에 나오지 않습니다. Codex 서버도 끄고 켤 수 있습니다(`~/.codex/config.toml`의 `enabled`, 모든 폴더에 적용, 처음 바꿀 때 원본을 `config.toml.watchtower-backup`으로 남김).

@@ -63,5 +63,6 @@
   "command.refreshUsage": "Re-check Claude plan usage now",
   "config.phoneBoardPorts": "Ports where the extension looks for a phone board (session-board) already running on this computer. The extension never starts or stops the board.",
   "config.phoneBoardFolder": "Folder where session-board is installed (the one with cli.js). Empty = ~/tools/session-board when it exists; otherwise the extension asks.",
+  "command.phoneBoardOpen": "Phone board: open it in this computer's browser",
   "command.phoneBoardPair": "Phone board: make a link for my phone"
 }

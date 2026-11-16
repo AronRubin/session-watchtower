@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.30.0
+
+- **See the phone board on a computer too.** The Sessions view has a computer button next to the phone button (and the command *Phone board: open it in this computer's browser*). It opens the board at the same address as the phone link, so a browser connected once goes straight in. If the board says the device is not connected yet, **Connect this browser** in the notification connects it with a fresh one-time code. Without Tailscale it opens this computer's own board address through VS Code, which also works from a remote window.
+- The Sessions view header stays on one line in a narrow side bar: the icon buttons are a little narrower, and when the buttons would still wrap, *New session* shows only its **+** (the name is in its tooltip).
+
 ## 0.29.0
 
 - **Sessions from other folders open with one click.** Claude Code opens a conversation only in a window with its folder open, so before, clicking a session from another folder only said where to open it. Now it brings up the VS Code window of that folder and that window opens the conversation. When no window has that folder open, Watchtower asks first and then opens it in a new window (on the same remote server for a remote window).

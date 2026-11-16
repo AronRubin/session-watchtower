@@ -2470,6 +2470,7 @@ function sessionsPayload() {
     rename: L('Rename session'),
     overlapTip: L('{0} file(s) here were also changed by another session', '{0}'),
     searchInside: L('Press Enter to search inside conversations'),
+    boardPc: L('Open the phone board in this computer\'s browser'),
     otherFolders: L('Other folders'), worktreeTip: L('Runs in a git worktree: {0}', '{0}'),
     lgSessions: L('Sessions'), lgFiles: L('Changed files'), lgRow: L('Under each session'),
     lgBusy: L('Working'), lgWaiting: L('Waiting for you (approval or answer)'), lgDone: L('Just finished (less than 10 minutes ago)'), lgIdle: L('Idle'), lgOff: L('Off (no Claude process)'),
@@ -2573,6 +2574,7 @@ class SessionsWebview {
       else if (m.type === 'renameGroup' && typeof m.team === 'string') renameGroup(m.team);
       else if (m.type === 'deleteGroup' && typeof m.team === 'string') deleteGroup(m.team);
       else if (m.type === 'phone') phoneBoardPair();
+      else if (m.type === 'boardPc') phoneBoardOpen();
     });
     view.onDidChangeVisibility(() => { if (view.visible) { requestScan(false); this.post(); } });
     view.onDidDispose(() => { if (this.view === view) { this.view = undefined; sessionsView = null; this.ready = false; } });
@@ -2671,7 +2673,11 @@ function sessionsHtml(webview) {
   .msg { padding: 8px 16px; color: var(--vscode-descriptionForeground); font-size: 12.5px; }
   .tag { flex-shrink: 0; font-size: 10.5px; line-height: 15px; padding: 0 5px; border-radius: 3px; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
   .row .act + .act { margin-left: -6px; }
-  .bar { display: flex; align-items: center; gap: 2px; padding: 2px 8px 6px 8px; }
+  .bar { display: flex; flex-wrap: wrap; row-gap: 2px; align-items: center; gap: 2px; padding: 2px 8px 6px 8px; }
+  /* 글자 없는 단추(찾기·휴대폰·컴퓨터·범례)는 좁게: 휴대폰 보드 단추 둘이 붙어도 좁은 옆 창에서 가로 스크롤이 생기지 않게. 그래도 넘치면 다음 줄로 */
+  .bar .btn:not(.new):not(#btnActive) { padding: 0 6px; }
+  /* 한 줄에 다 안 들어가면 "새 세션" 글자를 빼고 + 만 남긴다(설명은 마우스를 올리면 보임) */
+  .bar.tight #lblNew { display: none; }
   .btn { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: var(--vscode-foreground); font: inherit; font-size: 12.5px; cursor: pointer; white-space: nowrap; }
   .btn:hover { background: var(--vscode-toolbar-hoverBackground); }
   .btn:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
@@ -2687,12 +2693,13 @@ function sessionsHtml(webview) {
   @media (prefers-reduced-motion: reduce) { .dot.busy { animation: none; border-top-color: var(--vscode-charts-green); } }
 </style></head>
 <body>
-<div class="bar">
+<div class="bar" id="topBar">
   <button class="btn new" id="btnNew"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg><span id="lblNew"></span></button>
   <span class="spacer"></span>
   <button class="btn" id="btnActive" aria-pressed="false"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M9.5 1 3 9h4.2L6.5 15 13 7H8.8z"/></svg><span id="lblActive"></span></button>
   <button class="btn" id="btnSearch"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></svg></button>
   <button class="btn" id="btnPhone" hidden><svg width="13" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="4" y="1.5" width="8" height="13" rx="1.6"/><path d="M7 12.2h2"/></svg></button>
+  <button class="btn" id="btnBoardPc" hidden><svg width="15" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2.5" width="13" height="8.5" rx="1.2"/><path d="M6 14h4M8 11v3"/></svg></button>
   <button class="btn" id="btnLegend" aria-pressed="false"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="6.2"/><path d="M6.3 6.2a1.8 1.8 0 1 1 2.5 1.7c-.5.2-.8.6-.8 1.1v.5"/><circle cx="8" cy="11.6" r=".4" fill="currentColor"/></svg></button>
 </div>
 <div class="search" id="searchBox"><input id="q" type="text" autocomplete="off" spellcheck="false"></div>
@@ -2802,13 +2809,28 @@ function sessionsHtml(webview) {
   // 휴대폰 보드가 이 컴퓨터에서 켜져 있으면 단추가 보인다(누르면 휴대폰 연결 링크)
   const btnPhone = document.getElementById('btnPhone');
   btnPhone.addEventListener('click', () => vscode.postMessage({ type: 'phone' }));
+  // 같은 보드를 이 컴퓨터 브라우저로 열기
+  const btnBoardPc = document.getElementById('btnBoardPc');
+  btnBoardPc.addEventListener('click', () => vscode.postMessage({ type: 'boardPc' }));
+  // 머리 단추가 두 줄로 넘어가면 "새 세션" 글자를 뺀다(옆 창 폭·언어·휴대폰 보드 단추 수에 따라). 재기 전에 글자를 다시 보여 넓을 때 되돌린다
+  const topBar = document.getElementById('topBar');
+  function fitBar() {
+    topBar.classList.remove('tight');
+    const shown = Array.from(topBar.querySelectorAll('.btn')).filter((b) => !b.hidden);
+    if (shown.length > 1 && shown[shown.length - 1].offsetTop > shown[0].offsetTop + 2) topBar.classList.add('tight');
+  }
+  window.addEventListener('resize', fitBar);
   function render(p) {
     last = p;
     strings = p.strings || {};
     renderLegend();
     btnPhone.hidden = !p.phone;
     if (p.phone) { btnPhone.title = p.phone; btnPhone.setAttribute('aria-label', p.phone); }
+    btnBoardPc.hidden = !p.phone;
+    if (p.phone) { btnBoardPc.title = strings.boardPc || ''; btnBoardPc.setAttribute('aria-label', strings.boardPc || ''); }
     document.getElementById('lblNew').textContent = strings.newSession || '';
+    btnNew.title = strings.newSession || '';
+    requestAnimationFrame(fitBar); // "열린 세션 · N" 글자 등 이 그리기에서 바뀌는 것까지 다 들어간 뒤에 잰다
     btnSearch.title = strings.search || '';
     btnSearch.setAttribute('aria-label', strings.search || '');
     q.placeholder = strings.search || '';
@@ -3918,6 +3940,34 @@ async function phoneBoardPair() {
   showPhonePanel(r, boards, folder);
 }
 
+// 보드를 이 컴퓨터 브라우저로 연다(휴대폰 말고 컴퓨터로도 보기).
+// 주소는 휴대폰 연결 링크와 같은 곳(Tailscale 이름)이라, 한 번 연결한 브라우저는 그대로 들어간다(보드가 기기를 180일 기억).
+// Tailscale이 없으면 이 컴퓨터의 127.0.0.1 주소를 연다(원격 창이면 VS Code가 그 포트를 이 PC로 넘겨 준다).
+// 아직 연결 안 된 브라우저는 보드의 "연결이 필요합니다" 화면이 뜨므로, 알림의 "이 브라우저 연결"로 새 코드를 써서 바로 연결한다.
+// 연결 상태를 이 확장이 기억하지 않는다(브라우저 쿠키는 확장이 볼 수 없고, 다른 PC에서 같은 서버에 붙을 수도 있다)
+async function phoneBoardOpen() {
+  const boards = await refreshPhoneBoards(true);
+  const board = boards.find((b) => b.local) || boards[0];
+  if (!board) return phoneBoardPair(); // 보드가 없거나 안 켜졌을 때의 안내는 휴대폰 연결과 같다
+  let base = await phoneboard.publicBase();
+  if (!base) {
+    try { base = String(await vscode.env.asExternalUri(vscode.Uri.parse(`http://127.0.0.1:${board.port}/`))).replace(/\/+$/, ''); } catch { base = `http://127.0.0.1:${board.port}`; }
+  }
+  await vscode.env.openExternal(vscode.Uri.parse(base + '/'));
+  const connect = L('Connect this browser');
+  const b = await vscode.window.showInformationMessage(L('Opened the phone board in this computer\'s browser. If the page says this device is not connected yet, press "Connect this browser".'), connect);
+  if (b !== connect) return undefined;
+  const folder = phoneboard.boardFolder(cfg().phoneBoardFolder);
+  if (!folder) return phoneBoardPair(); // 보드 폴더를 모르면 고르는 안내부터
+  const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: L('Connecting this browser to the phone board…') }, () => phoneboard.pair(folder));
+  if (!r.ok) {
+    vscode.window.showWarningMessage(r.err === 'timeout' ? L('The phone board did not answer in time. Try again.') : L('Could not make a link. Run "node cli.js pair" in {0} to see why.', folder));
+    return undefined;
+  }
+  // 연 주소와 같은 곳으로 코드를 보낸다(쿠키가 그 주소에 남아야 다음부터 바로 들어간다). 코드는 한 번 쓰면 없어지고 저장하지 않는다
+  return vscode.env.openExternal(vscode.Uri.parse(base + '/pair?c=' + encodeURIComponent(r.code)));
+}
+
 // Tailscale 받는 곳(공식 주소). 휴대폰은 QR로, 컴퓨터는 링크로
 const TS_LINKS = {
   phone: 'https://tailscale.com/download',
@@ -4457,6 +4507,7 @@ function activate(context) {
     vscode.window.registerWebviewViewProvider(MCP_VIEW, mcpWebview),
     vscode.commands.registerCommand('claudeSessionChanges.refreshUsage', () => refreshClaudeUsage(true)),
     vscode.commands.registerCommand('claudeSessionChanges.phoneBoardPair', () => phoneBoardPair()),
+    vscode.commands.registerCommand('claudeSessionChanges.phoneBoardOpen', () => phoneBoardOpen()),
     vscode.commands.registerCommand('claudeSessionChanges.checkMcp', () => { vscode.commands.executeCommand(MCP_VIEW + '.focus'); return mcpCheck(); }),
     vscode.commands.registerCommand('claudeSessionChanges.openSessionChanges', (arg) => openSessionChanges(arg)),
     vscode.commands.registerCommand('claudeSessionChanges.archiveSession', (arg) => setArchived(arg, true)),
