@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.36.0
+
+- **Settings in the Sessions view's `…` menu.** *Choose what New session opens (Claude Code / Codex)* switches the New session button without searching the settings, marking the current choice, and *Open all Watchtower settings* opens every Watchtower setting. The button's tooltip now points to that menu.
+- **Phone board: Codex sessions say "view only".** Their answer button showed *RC off*, as if `/rc` could turn it on. The answer button is a Claude Code Remote Control link, which Codex sessions do not have, so the waiting card, the conversation header and the bottom bar now say *Codex · view only* (board copied from session-board ab26ba0).
+
 ## 0.35.0
 
 - **Phone setup that walks you through.** The phone panel now checks each step on this computer (Tailscale installed → signed in → `tailscale serve` forwards the board's port) and marks the one to do next. Step 3 shows the serve command for this system (PowerShell on Windows) with a *Run it in a terminal* button, and says what to do the first time: open the `login.tailscale.com` address, turn on HTTPS certificates and leave Funnel off.

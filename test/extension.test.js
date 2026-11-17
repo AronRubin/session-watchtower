@@ -189,6 +189,19 @@ test('새 세션 단추: 설정 newSessionTool이 codex면 Codex 새 대화(확�
   await waitFor(() => /^New Claude Code session/.test(web.lastPayload().strings.newSessionTip || ''), '되돌림');
 });
 
+test('세션 창 … 메뉴: 새 세션 도구 바꾸기(고르면 설정 newSessionTool이 바뀐다)와 Watchtower 설정 모두 보기', async () => {
+  const menu = require('../package.json').contributes.menus['view/title'].filter((m) => m.when === 'view == claudeSessionChanges.sessions').map((m) => m.command);
+  for (const c of ['claudeSessionChanges.pickNewSessionTool', 'claudeSessionChanges.openSettings']) assert.ok(menu.includes(c), c + '가 … 메뉴에 있다');
+  stub.calls.length = 0;
+  stub.state.pick = (items) => items.find((i) => i.v === 'codex');
+  await stub.commands.get('claudeSessionChanges.pickNewSessionTool')();
+  stub.state.pick = undefined;
+  const items = stub.calls.find((c) => c[0] === 'pick')[1];
+  assert.deepStrictEqual(items.map((i) => [i.label, i.description]), [['Claude Code', 'current'], ['Codex', '']], '지금 고른 것을 표시');
+  assert.strictEqual(stub.state.config.newSessionTool, 'codex', '고른 도구로 설정이 바뀐다');
+  stub.changeConfig('newSessionTool', 'claude');
+});
+
 test('다른 폴더 세션: 그 폴더 창을 앞으로(없으면 물어보고 새 창), 그 창이 요청을 받아 대화를 연다', async () => {
   const storage = stub.context.globalStorageUri.fsPath;
   const winDir = path.join(storage, 'windows');

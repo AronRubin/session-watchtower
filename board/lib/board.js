@@ -197,9 +197,9 @@ function buildState(sessions, ctx) {
     ...waiting.map((x) => {
       const w = words(x.sid);
       const ask = w.question || (w.tool ? `${w.tool.name}${w.tool.text ? ': ' + w.tool.text : ''}` : '');
-      return { sid: x.sid, title: x.title, since: x.since, rc: x.rc, kind: x.waitingFor === 'permission prompt' ? 'permission' : 'question', text: ask || w.lastLine };
+      return { sid: x.sid, title: x.title, since: x.since, rc: x.rc, agent: x.agent, kind: x.waitingFor === 'permission prompt' ? 'permission' : 'question', text: ask || w.lastLine };
     }),
-    ...asking.map((x) => ({ sid: x.sid, title: x.title, since: x.since, rc: x.rc, kind: 'turn', text: words(x.sid).lastLine })),
+    ...asking.map((x) => ({ sid: x.sid, title: x.title, since: x.since, rc: x.rc, agent: x.agent, kind: 'turn', text: words(x.sid).lastLine })),
   ];
   // 방금 끝남(30분 안): 내 차례로 올라간 세션은 빼고, 할 일 없다고 한 세션은 흐리게 보이도록 turn을 붙인다
   // 묶음 이름은 세션 목록과 같은 규칙: Watchtower 그룹이 있으면 그룹, 없으면 프로젝트 폴더

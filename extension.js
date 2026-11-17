@@ -679,6 +679,18 @@ async function pickArchiveAfter() {
   await vscode.workspace.getConfiguration(CFG).update('archiveAfter', pick.v, vscode.ConfigurationTarget.Global);
 }
 
+// 세션 창 "…" 메뉴: "+ 새 세션" 단추가 열 도구 고르기(설정 newSessionTool). 설정 화면에서 찾지 않아도 되게
+async function pickNewSessionTool() {
+  const cur = cfg().newSessionTool;
+  const items = [
+    { label: 'Claude Code', description: cur === 'claude' ? L('current') : '', detail: L('A new conversation in a tab.'), v: 'claude' },
+    { label: 'Codex', description: cur === 'codex' ? L('current') : '', detail: L('A new Codex chat (the Codex extension, or the Codex CLI in a terminal when the extension is not installed).'), v: 'codex' },
+  ];
+  const pick = await vscode.window.showQuickPick(items, { placeHolder: L('Which tool should the "+ New session" button open?') });
+  if (!pick) return;
+  await vscode.workspace.getConfiguration(CFG).update('newSessionTool', pick.v, vscode.ConfigurationTarget.Global);
+}
+
 function normalizeArchive(data) {
   const obj = (x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {});
   const d = obj(data);
@@ -2651,7 +2663,7 @@ function sessionRow(s, tabs, team) {
 function sessionsPayload() {
   const strings = {
     showChanges: L('Show changed files'), review: L('Review all changes'), newSession: L('New session'), active: L('Open'),
-    newSessionTip: cfg().newSessionTool === 'codex' ? L('New Codex chat (setting newSessionTool chooses Claude Code or Codex)') : L('New Claude Code session (setting newSessionTool chooses Claude Code or Codex)'),
+    newSessionTip: cfg().newSessionTool === 'codex' ? L('New Codex chat (to switch to Claude Code: … menu at the top of this view)') : L('New Claude Code session (to switch to Codex: … menu at the top of this view)'),
     // "열린 세션" = 지금 프로세스가 떠 있는 세션(작업 중·기다림·쉼). 작업 중인 것만 세는 숫자가 아니다
     // 숫자는 화면 쪽에서 채운다 → 자리표시자를 그대로 넘겨 번역 함수가 건드리지 않게 한다
     activeTip: L('Show only sessions that are open right now (working, waiting or idle). The number counts this folder: {0}. Other folders: {1}.', '{0}', '{1}'),
@@ -4859,6 +4871,7 @@ function activate(context) {
     vscode.commands.registerCommand('claudeSessionChanges.showAll', () => setAliveOnly(false)),
     vscode.commands.registerCommand('claudeSessionChanges.pickWindow', pickWindow),
     vscode.commands.registerCommand('claudeSessionChanges.pickArchiveAfter', pickArchiveAfter),
+    vscode.commands.registerCommand('claudeSessionChanges.pickNewSessionTool', pickNewSessionTool),
     vscode.commands.registerCommand('claudeSessionChanges.searchConversations', (q) => searchConversations(typeof q === 'string' ? q : '')),
     vscode.commands.registerCommand('claudeSessionChanges.renameSession', (arg) => renameSession(arg)),
     vscode.commands.registerCommand('claudeSessionChanges.createGroup', () => createGroup()),

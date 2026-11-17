@@ -270,7 +270,9 @@
   }
 
   const RC_RE = /^https:\/\/claude\.ai\/code\/session_[A-Za-z0-9]+$/;
-  function rcLink(url, text, cls) {
+  // Codex 세션은 Remote Control(Claude Code 기능)이 없어 "RC 꺼짐"이 아니라 보기만 된다고 쓴다(/rc로 켤 수 있다고 오해하지 않게)
+  function rcLink(url, text, cls, agent) {
+    if (agent === 'codex') return el('span', 'btn off', t('Codex · 보기만'));
     if (!url || !RC_RE.test(url)) return el('span', 'btn off', t('RC 꺼짐'));
     const a = el('a', cls || 'btn');
     add(a, document.createTextNode(text), icon('out'));
@@ -769,7 +771,7 @@
       if (a.text) add(open, el('span', 'q', tr(a.text)));
       open.addEventListener('click', () => { S.listY = window.scrollY; go(a.sid, 'conv'); });
       const row = el('div', 'row');
-      add(row, rcLink(a.rc, t('앱에서 답하기')), el('span', 'hint', t('눌러서 보기')));
+      add(row, rcLink(a.rc, t('앱에서 답하기'), undefined, a.agent), el('span', 'hint', t('눌러서 보기')));
       add(w, x, open, row);
       out.push(w);
     }
@@ -1177,7 +1179,7 @@
     dot.setAttribute('aria-hidden', 'true');
     add(line, dot, document.createTextNode(' ' + statusText(info) + ' · ' + (info.status === 'closed' ? before(info.lastActivity, d.now) : during(info.since, d.now)) + (info.host && d.remotes && !d.hostView ? ' · ' + info.host : '') + (info.cwd ? ' · ' + info.cwd : '')));
     add(head, el('h2', 't', info.title), line);
-    add(dh, back, head, rcLink(info.rc, t('앱에서 열기'), 'btn ghost'));
+    add(dh, back, head, rcLink(info.rc, t('앱에서 열기'), 'btn ghost', info.agent));
     add(sec, dh);
     if (info.agent === 'codex') {
       // Codex 세션은 Remote Control이 없어 휴대폰에서 답할 수 없다(보기만)
@@ -1255,7 +1257,8 @@
       add(nav, a);
     } else {
       const off = el('span', 'app off');
-      add(off, icon('out'), el('span', '', t('RC 꺼짐')));
+      const codex = ((sum && sum.agent) || (dt && dt.agent)) === 'codex';
+      add(off, icon('out'), el('span', '', codex ? t('보기만#nav') : t('RC 꺼짐')));
       add(nav, off);
     }
     return nav;
@@ -1728,7 +1731,7 @@
       '승인 기다림': 'Waiting for approval', '답 기다림': 'Waiting for answer', '결정 기다림': 'Waiting for decision',
       '쉼 · 할 일 없음': 'Idle · nothing to do', '닫힘 · 질문 남음': 'Closed · question left',
       '작업 중': 'Working', '쉼': 'Idle', '닫힘': 'Closed',
-      'RC 꺼짐': 'RC off',
+      'RC 꺼짐': 'RC off', 'Codex · 보기만': 'Codex · view only', '보기만#nav': 'View only',
       '복사했습니다.': 'Copied.', '복사하지 못했습니다. 글을 길게 눌러 골라 주세요.': 'Could not copy. Press and hold the text to select it.',
       '복사': 'Copy', '코드 복사': 'Copy code',
       '연결 끊김 · {0} 전 정보': 'Disconnected · data from {0} ago', '연결 끊김 · 정보 없음': 'Disconnected · no data',

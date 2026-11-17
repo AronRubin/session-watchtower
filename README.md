@@ -68,7 +68,7 @@ One row per session, newest conversation first, in the same colors as Claude Cod
 
 Under a working or waiting session a second line shows **what it is doing now** (*Running: npm test*, *Editing README.md*, *2 subagents working*) and **how much it changed** (`+142 −38` with a small green and red bar). A `⚠ 2` tag means two of its files were also changed by another session.
 
-- **Click a row** to open that conversation in Claude Code. **New session** starts a new one: a Claude Code conversation, or a Codex chat when the setting `newSessionTool` is `codex` (the Codex extension's new agent, or the Codex CLI in a terminal when the extension is not installed).
+- **Click a row** to open that conversation in Claude Code. **New session** starts a new one: a Claude Code conversation, or a Codex chat when the setting `newSessionTool` is `codex` (the Codex extension's new agent, or the Codex CLI in a terminal when the extension is not installed). To switch, use *Choose what New session opens* in the view's `…` menu; *Open all Watchtower settings* in the same menu lists every setting.
 - **Open · 5** filters the list to sessions that are open right now (working, waiting or idle). The number counts this folder.
 - **The magnifier** filters by title. Press Enter in the box to search inside conversations instead.
 - **The ? button** explains every color.
@@ -297,7 +297,7 @@ The session counts sit right next to the usage, on the right side of the status 
 
 ## Phone board
 
-The phone board shows the sessions of this computer in your phone's browser: which one is working or waiting for you, what each changed, and the conversation. It is read-only; to answer a session you still use Claude Code (or its Remote Control). It is built into Watchtower and **off by default**.
+The phone board shows the sessions of this computer in your phone's browser: which one is working or waiting for you, what each changed, and the conversation. It is read-only; to answer a session you still use Claude Code (or its Remote Control). Codex sessions are view only (*Codex · view only*): the answer button is a Claude Code Remote Control link, and Codex has none. It is built into Watchtower and **off by default**.
 
 <img src="media/readme/phone-panel.png" width="620" alt="The phone board panel: an example of the board on a phone, the setup steps from installing Tailscale, and the QR code for the phone">
 
