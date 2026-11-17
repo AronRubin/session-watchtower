@@ -297,7 +297,7 @@ The session counts sit right next to the usage, on the right side of the status 
 
 ## Phone board
 
-The phone board shows the sessions of this computer in your phone's browser: which one is working or waiting for you, what each changed, and the conversation. It is read-only; to answer a session you still use Claude Code (or its Remote Control). Codex sessions are view only (*Codex · view only*): the answer button is a Claude Code Remote Control link, and Codex has none. It is built into Watchtower and **off by default**.
+The phone board shows the sessions of this computer in your phone's browser: which one is working or waiting for you, what each changed, and the conversation. It is read-only; to answer a session you still use Claude Code (or its Remote Control). Codex sessions get *Open in ChatGPT* instead, a `codex://threads/<id>` link that opens the chat in the ChatGPT app when this computer is connected to Codex remote access there. OpenAI documents this link only for the desktop app; it has been reported to open the right chat on iPhone, and other phones may not open it. It is built into Watchtower and **off by default**.
 
 <img src="media/readme/phone-panel.png" width="620" alt="The phone board panel: an example of the board on a phone, the setup steps from installing Tailscale, and the QR code for the phone">
 

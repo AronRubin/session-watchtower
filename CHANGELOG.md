@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.36.1
+
+- **Phone board: open a Codex chat in the ChatGPT app.** When this computer is connected to Codex remote access in the ChatGPT app, a Codex session's *Open in ChatGPT* button (waiting card, conversation header, bottom bar) opens that chat there through `codex://threads/<id>`. OpenAI documents this link only for the desktop app and it has been reported to work on iPhone, so the conversation view says when it opens; if it does not, continue in VS Code (board copied from session-board 06c5ae1).
+
 ## 0.36.0
 
 - **Settings in the Sessions view's `…` menu.** *Choose what New session opens (Claude Code / Codex)* switches the New session button without searching the settings, marking the current choice, and *Open all Watchtower settings* opens every Watchtower setting. The button's tooltip now points to that menu.
