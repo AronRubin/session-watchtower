@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.36.3
+
+- **Phone board on Android: the ChatGPT app opens, not the website.** In 0.36.2 Chrome opened the chatgpt.com website when the app did not take the link. The button now hands `https://chatgpt.com/codex` to the ChatGPT app directly (Android package `com.openai.chatgpt`), and goes to the website only when the app does not take it (board copied from session-board 1d70dea).
+
 ## 0.36.2
 
 - **Phone board on Android: Open in ChatGPT does something.** The ChatGPT app on Android does not take `codex://` links, so the button did nothing there. On Android it now hands the same link to the app through an intent address and, when the app does not take it, Chrome goes to Codex in the ChatGPT app (`https://chatgpt.com/codex`). The button copies the chat title and says which chat to pick.

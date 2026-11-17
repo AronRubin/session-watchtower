@@ -274,14 +274,15 @@
   // 공식 문서는 데스크톱 앱용으로만 적은 링크라(아이폰에서 열린다는 보고가 있음) 안내문에 조건을 함께 쓴다. ID는 세션 ID(codex:<UUID>)에서만 꺼낸다
   const CODEX_SID_RE = /(?:^|~)codex:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
   // 안드로이드 ChatGPT 앱은 codex:// 링크를 받지 않는다(openai/codex #52146, 11-17 실제 휴대폰에서도 반응 없음).
-  // 그래서 안드로이드에서는 같은 링크를 intent 주소로 앱에 넘기고, 앱이 받지 않으면 Chrome이 https://chatgpt.com/codex(앱의 Codex 화면)로 넘어간다.
-  // 그 화면에서 대화를 직접 골라야 하므로, 누를 때 대화 제목을 복사해 두고 무엇을 고르면 되는지 알린다
+  // 그래서 안드로이드에서는 https://chatgpt.com/codex를 ChatGPT 앱(패키지 com.openai.chatgpt)에 직접 넘긴다. 보통 링크나 intent의
+  // 대체 주소로 넘기면 Chrome이 웹사이트로 열어 버렸다(11-17 실제 휴대폰). 앱이 그 주소를 받지 않을 때만 웹사이트로 간다.
+  // 앱의 Codex 화면에서 대화를 직접 골라야 하므로, 누를 때 대화 제목을 복사해 두고 무엇을 고르면 되는지 알린다
   const ANDROID = /Android/i.test(navigator.userAgent);
   const CODEX_WEB = 'https://chatgpt.com/codex';
   function codexThreadUrl(sid) {
     const m = CODEX_SID_RE.exec(String(sid || ''));
     if (!m) return null;
-    if (ANDROID) return 'intent://threads/' + m[1] + '#Intent;scheme=codex;package=com.openai.chatgpt;S.browser_fallback_url=' + encodeURIComponent(CODEX_WEB) + ';end';
+    if (ANDROID) return 'intent://chatgpt.com/codex#Intent;scheme=https;package=com.openai.chatgpt;S.browser_fallback_url=' + encodeURIComponent(CODEX_WEB) + ';end';
     return 'codex://threads/' + m[1];
   }
   function codexAnchor(cls, kids, sid, title) {
