@@ -273,19 +273,38 @@
   // Codex 대화는 Remote Control(Claude Code 기능)이 없다. 대신 ChatGPT 앱의 Codex 원격 연결로 열 수 있는 codex://threads/<대화 ID>를 단다.
   // 공식 문서는 데스크톱 앱용으로만 적은 링크라(아이폰에서 열린다는 보고가 있음) 안내문에 조건을 함께 쓴다. ID는 세션 ID(codex:<UUID>)에서만 꺼낸다
   const CODEX_SID_RE = /(?:^|~)codex:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+  // 안드로이드 ChatGPT 앱은 codex:// 링크를 받지 않는다(openai/codex #52146, 11-17 실제 휴대폰에서도 반응 없음).
+  // 그래서 안드로이드에서는 같은 링크를 intent 주소로 앱에 넘기고, 앱이 받지 않으면 Chrome이 https://chatgpt.com/codex(앱의 Codex 화면)로 넘어간다.
+  // 그 화면에서 대화를 직접 골라야 하므로, 누를 때 대화 제목을 복사해 두고 무엇을 고르면 되는지 알린다
+  const ANDROID = /Android/i.test(navigator.userAgent);
+  const CODEX_WEB = 'https://chatgpt.com/codex';
   function codexThreadUrl(sid) {
     const m = CODEX_SID_RE.exec(String(sid || ''));
-    return m ? 'codex://threads/' + m[1] : null;
+    if (!m) return null;
+    if (ANDROID) return 'intent://threads/' + m[1] + '#Intent;scheme=codex;package=com.openai.chatgpt;S.browser_fallback_url=' + encodeURIComponent(CODEX_WEB) + ';end';
+    return 'codex://threads/' + m[1];
   }
-  function rcLink(url, text, cls, agent, sid) {
+  function codexAnchor(cls, kids, sid, title) {
+    const u = codexThreadUrl(sid);
+    if (!u) return null;
+    const a = el('a', cls);
+    add(a, ...kids);
+    a.href = u;
+    a.rel = 'noopener noreferrer';
+    if (ANDROID) {
+      a.addEventListener('click', async (e) => {
+        e.preventDefault();
+        let copied = false;
+        if (title) { try { await navigator.clipboard.writeText(title); copied = true; } catch { /* 복사가 막혀도 앱은 연다 */ } }
+        showToast(copied ? t('ChatGPT 앱의 Codex에서 이 컴퓨터의 대화 "{0}"을 고르세요. 제목을 복사해 두었습니다.', title) : t('ChatGPT 앱의 Codex에서 이 컴퓨터의 대화 "{0}"을 고르세요.', title || ''));
+        location.href = u;
+      });
+    }
+    return a;
+  }
+  function rcLink(url, text, cls, agent, sid, title) {
     if (agent === 'codex') {
-      const u = codexThreadUrl(sid);
-      if (!u) return el('span', 'btn off', t('Codex · 보기만'));
-      const a = el('a', cls || 'btn');
-      add(a, document.createTextNode(t('ChatGPT 앱에서 열기')), icon('out'));
-      a.href = u;
-      a.rel = 'noopener noreferrer';
-      return a;
+      return codexAnchor(cls || 'btn', [document.createTextNode(t('ChatGPT 앱에서 열기')), icon('out')], sid, title) || el('span', 'btn off', t('Codex · 보기만'));
     }
     if (!url || !RC_RE.test(url)) return el('span', 'btn off', t('RC 꺼짐'));
     const a = el('a', cls || 'btn');
@@ -785,7 +804,7 @@
       if (a.text) add(open, el('span', 'q', tr(a.text)));
       open.addEventListener('click', () => { S.listY = window.scrollY; go(a.sid, 'conv'); });
       const row = el('div', 'row');
-      add(row, rcLink(a.rc, t('앱에서 답하기'), undefined, a.agent, a.sid), el('span', 'hint', t('눌러서 보기')));
+      add(row, rcLink(a.rc, t('앱에서 답하기'), undefined, a.agent, a.sid, a.title), el('span', 'hint', t('눌러서 보기')));
       add(w, x, open, row);
       out.push(w);
     }
@@ -909,7 +928,7 @@
       if (m.role === 'tool') { run.push([m, i]); return; }
       flush();
       const msg = el('div', 'msg ' + m.role);
-      add(msg, el('div', 'tm', (m.role === 'user' ? t('나') : 'Claude') + ' · ' + clock(m.ts)));
+      add(msg, el('div', 'tm', (m.role === 'user' ? t('나') : dt.agent === 'codex' ? 'Codex' : 'Claude') + ' · ' + clock(m.ts)));
       const long = m.text.length > 700 && !S.more.has(i);
       const body = tr(long ? cutLong(m.text, 700) : m.text);
       // 내 말은 친 그대로, Claude 글은 마크다운으로
@@ -1193,11 +1212,13 @@
     dot.setAttribute('aria-hidden', 'true');
     add(line, dot, document.createTextNode(' ' + statusText(info) + ' · ' + (info.status === 'closed' ? before(info.lastActivity, d.now) : during(info.since, d.now)) + (info.host && d.remotes && !d.hostView ? ' · ' + info.host : '') + (info.cwd ? ' · ' + info.cwd : '')));
     add(head, el('h2', 't', info.title), line);
-    add(dh, back, head, rcLink(info.rc, t('앱에서 열기'), 'btn ghost', info.agent, S.sel));
+    add(dh, back, head, rcLink(info.rc, t('앱에서 열기'), 'btn ghost', info.agent, S.sel, info.title));
     add(sec, dh);
     if (info.agent === 'codex') {
       // Codex 세션은 Remote Control이 없어 휴대폰에서 답할 수 없다(보기만)
-      add(sec, el('p', 'rchint', t('Codex 대화입니다. "ChatGPT 앱에서 열기"는 이 컴퓨터를 ChatGPT 앱의 Codex 원격 연결에 등록해 둔 경우에만 열립니다(공식 안내가 없는 링크라 휴대폰에 따라 안 열릴 수 있음). 안 열리면 VS Code에서 이어 가세요.')));
+      add(sec, el('p', 'rchint', ANDROID
+        ? t('Codex 대화입니다. 안드로이드 ChatGPT 앱은 대화를 바로 여는 링크를 아직 받지 않아, "ChatGPT 앱에서 열기"를 누르면 앱의 Codex 화면이 열립니다. 거기서 이 컴퓨터의 이 대화를 고르세요(제목을 복사해 둡니다). 이 컴퓨터를 ChatGPT 앱의 Codex 원격 연결에 등록해 둔 경우에만 대화가 보입니다.')
+        : t('Codex 대화입니다. "ChatGPT 앱에서 열기"는 이 컴퓨터를 ChatGPT 앱의 Codex 원격 연결에 등록해 둔 경우에만 열립니다(공식 안내가 없는 링크라 휴대폰에 따라 안 열릴 수 있음). 안 열리면 VS Code에서 이어 가세요.')));
     } else if (!info.rc && info.status === 'closed') {
       // 닫힌 세션은 /rc로 열 수 없다. 질문으로 끝난 경우에만 다시 여는 법을 알린다
       if (info.turn === 'ask') add(sec, el('p', 'rchint', t('닫힌 세션입니다. 답하려면 VS Code에서 이 세션을 다시 여세요.')));
@@ -1257,7 +1278,7 @@
     const dt = S.detail && !S.detail.error ? S.detail : null;
     const sum = findSummary(d);
     const rc = (sum && sum.rc) || (dt && dt.rc) || null;
-    const cxUrl = ((sum && sum.agent) || (dt && dt.agent)) === 'codex' ? codexThreadUrl(S.sel) : null;
+    const cxLink = ((sum && sum.agent) || (dt && dt.agent)) === 'codex' ? codexAnchor('app', [icon('out'), el('span', '', t('ChatGPT 앱#nav'))], S.sel, (sum && sum.title) || (dt && dt.title)) : null;
     add(nav,
       btn(t('목록'), 'back', false, () => go(null)),
       btn(t('대화#nav'), 'chat', S.tab === 'conv', () => switchTab('conv')),
@@ -1270,12 +1291,8 @@
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
       add(nav, a);
-    } else if (cxUrl) {
-      const a = el('a', 'app');
-      add(a, icon('out'), el('span', '', t('ChatGPT 앱#nav')));
-      a.href = cxUrl;
-      a.rel = 'noopener noreferrer';
-      add(nav, a);
+    } else if (cxLink) {
+      add(nav, cxLink);
     } else {
       const off = el('span', 'app off');
       const codex = ((sum && sum.agent) || (dt && dt.agent)) === 'codex';
@@ -1754,6 +1771,9 @@
       '작업 중': 'Working', '쉼': 'Idle', '닫힘': 'Closed',
       'RC 꺼짐': 'RC off', 'Codex · 보기만': 'Codex · view only', '보기만#nav': 'View only',
       'ChatGPT 앱에서 열기': 'Open in ChatGPT', 'ChatGPT 앱#nav': 'ChatGPT',
+      'ChatGPT 앱의 Codex에서 이 컴퓨터의 대화 "{0}"을 고르세요. 제목을 복사해 두었습니다.': 'In Codex in the ChatGPT app, pick this computer\'s chat "{0}". The title is copied.',
+      'ChatGPT 앱의 Codex에서 이 컴퓨터의 대화 "{0}"을 고르세요.': 'In Codex in the ChatGPT app, pick this computer\'s chat "{0}".',
+      'Codex 대화입니다. 안드로이드 ChatGPT 앱은 대화를 바로 여는 링크를 아직 받지 않아, "ChatGPT 앱에서 열기"를 누르면 앱의 Codex 화면이 열립니다. 거기서 이 컴퓨터의 이 대화를 고르세요(제목을 복사해 둡니다). 이 컴퓨터를 ChatGPT 앱의 Codex 원격 연결에 등록해 둔 경우에만 대화가 보입니다.': 'This is a Codex chat. The ChatGPT app on Android does not take links to a chat yet, so "Open in ChatGPT" opens Codex in the app; pick this computer\'s chat there (the title is copied). The chat is listed only when this computer is connected to Codex remote access in the ChatGPT app.',
       '복사했습니다.': 'Copied.', '복사하지 못했습니다. 글을 길게 눌러 골라 주세요.': 'Could not copy. Press and hold the text to select it.',
       '복사': 'Copy', '코드 복사': 'Copy code',
       '연결 끊김 · {0} 전 정보': 'Disconnected · data from {0} ago', '연결 끊김 · 정보 없음': 'Disconnected · no data',

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.36.2
+
+- **Phone board on Android: Open in ChatGPT does something.** The ChatGPT app on Android does not take `codex://` links, so the button did nothing there. On Android it now hands the same link to the app through an intent address and, when the app does not take it, Chrome goes to Codex in the ChatGPT app (`https://chatgpt.com/codex`). The button copies the chat title and says which chat to pick.
+- **Codex answers are labeled Codex**, not Claude, in the phone board's conversation view (board copied from session-board f011351).
+
 ## 0.36.1
 
 - **Phone board: open a Codex chat in the ChatGPT app.** When this computer is connected to Codex remote access in the ChatGPT app, a Codex session's *Open in ChatGPT* button (waiting card, conversation header, bottom bar) opens that chat there through `codex://threads/<id>`. OpenAI documents this link only for the desktop app and it has been reported to work on iPhone, so the conversation view says when it opens; if it does not, continue in VS Code (board copied from session-board 06c5ae1).
