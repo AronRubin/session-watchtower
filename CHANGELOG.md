@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.37.0
+
+- **`/clear` keeps the session in its group.** `/clear` starts a new conversation with a new session ID, so it used to drop out of its group and lose its role tag. Now the new conversation takes over the old one's place, role and lead badge, and shows the name you gave the old one (so the board's *Sessions and roles* table still matches) until you rename it. It is recognised when the same Claude Code process switches to a conversation whose log starts with `/clear`, or, when no window saw that moment, when a `/clear` conversation in the same folder starts within 10 seconds of the old one ending and only one old conversation fits. The old conversation goes to Archived. `/resume` into another conversation and a later, unrelated `/clear` are not taken over, and once you remove the new conversation from the group it is not put back.
+
 ## 0.36.3
 
 - **Phone board on Android: the ChatGPT app opens, not the website.** In 0.36.2 Chrome opened the chatgpt.com website when the app did not take the link. The button now hands `https://chatgpt.com/codex` to the ChatGPT app directly (Android package `com.openai.chatgpt`), and goes to the website only when the app does not take it (board copied from session-board 1d70dea).

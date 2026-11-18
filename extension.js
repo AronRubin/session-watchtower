@@ -526,7 +526,8 @@ async function renameSession(arg) {
     validateInput: (v) => (!String(v).trim() ? L('The name cannot be empty.') : String(v).length > 200 ? L('The name is too long (200 characters at most).') : undefined),
   });
   const title = String(input || '').replace(/\s+/g, ' ').trim();
-  if (!title || title.length > 200 || title === s.title) return false;
+  // 같은 이름이어도 /clear로 이어받아 잠시 보여 주던 이름이면 기록에 남긴다(그래야 Claude Code 목록에도 그 이름이 보인다)
+  if (!title || title.length > 200 || (title === s.title && s.titleSource !== 'inherited')) return false;
   const file = s.file;
   try {
     if (!file || !UUID_RE.test(sid)) throw new Error('no session log');
@@ -777,6 +778,8 @@ function normalizeGroups(data) {
       if (seen.has(sid)) continue; // 세션 하나는 그룹 하나에만
       seen.add(sid);
       members[sid] = { role: v && typeof v.role === 'string' ? v.role.slice(0, ROLE_MAX) : '', at: v && Number(v.at) > 0 ? Number(v.at) : 0 };
+      // /clear로 이어받은 세션: 옛 세션에 사용자가 붙인 이름(새 세션 이름이 AI 제목인 동안 대신 보여 준다)
+      if (v && typeof v.name === 'string' && v.name.trim()) members[sid].name = v.name.trim().slice(0, 200);
     }
     groups.push({ id: g.id, name: g.name.slice(0, 60), memo: typeof g.memo === 'string' ? g.memo : '', lead: typeof g.lead === 'string' && (members[g.lead] || g.lead === '__none__') ? g.lead : '', members, at: Number(g.at) > 0 ? Number(g.at) : 0 });
   }
@@ -892,6 +895,89 @@ function removeFromGroup(arg) {
     for (const g of d.groups) if (g.members[sid]) { delete g.members[sid]; hit = true; }
     return hit ? undefined : false;
   });
+}
+
+// ---------- /clear로 이어진 세션은 그룹 자리를 이어받는다 ----------
+// Claude Code의 /clear는 같은 프로세스에서 세션 ID만 바꾸고 새 기록 파일을 시작한다(첫 사용자 기록이 /clear 명령).
+// 그룹은 세션 ID로 기억하므로 그대로 두면 새 세션이 그룹 밖으로 나오고 역할 꼬리표도 빠진다.
+// 이어받았다고 보는 경우(새 기록이 /clear로 시작해야 한다 — /resume으로 다른 세션을 연 것은 이어받지 않는다):
+//   ① 실행 중 목록에서 같은 프로세스(pid + 시작 시각)의 세션 ID가 옛 세션 → 새 세션으로 바뀌었다(창이 열린 동안 본 것, globalState에 남긴다)
+//   ② 그 순간을 못 봤으면(창을 다시 불러오던 중 등): 같은 기록 폴더·작업 폴더에서 옛 기록이 끝난 시각과 새 기록의 /clear 시각이
+//      몇 초 안이고, 그런 옛 세션이 하나뿐이다(지금 다른 프로세스에서 돌고 있는 세션은 빼고)
+// 이어받는 것: 그룹 자리와 손으로 정한 역할, 대장 지위, 사용자가 붙인 이름(새 세션 이름이 AI 제목인 동안 대신 보여 준다).
+// 옛 세션은 그룹에서 빼고 보관함으로 보낸다(나중에 다시 열면 그룹 밖 세션으로 돌아온다). 한 번 이은 짝은 기억해 두고 다시 하지 않는다
+const PROC_SIDS_KEY = 'claudeSessionChanges.procSids';
+const CLEAR_DONE_KEY = 'claudeSessionChanges.clearInherited';
+const CLEAR_GAP_MS = 10000;
+
+function clearPairs(list) {
+  const pairs = [];
+  const bySid = new Map(list.map((x) => [x.sid, x]));
+  const seen = Object.assign({}, (ctx && ctx.globalState.get(PROC_SIDS_KEY)) || {});
+  let changed = false;
+  for (const x of list) {
+    if (!x.alive || !x.procKey || x.agent === 'codex') continue;
+    const prev = seen[x.procKey];
+    if (prev && prev !== x.sid && x.clearStart) pairs.push([prev, x.sid, 'proc']);
+    if (prev !== x.sid) { seen[x.procKey] = x.sid; changed = true; }
+  }
+  // 살아 있는 프로세스 것만 남긴다(끝난 프로세스의 pid는 다시 쓰일 수 있다)
+  const live = new Set(list.filter((x) => x.alive && x.procKey).map((x) => x.procKey));
+  for (const k of Object.keys(seen)) if (!live.has(k)) { delete seen[k]; changed = true; }
+  if (changed && ctx) ctx.globalState.update(PROC_SIDS_KEY, seen);
+  const paired = new Set(pairs.map((p) => p[1]));
+  for (const x of list) {
+    if (!x.clearStart || !x.clearTs || paired.has(x.sid) || x.agent === 'codex') continue;
+    const cands = list.filter((o) => o.sid !== x.sid && !o.alive && o.agent !== 'codex' && o.projectDir && o.projectDir === x.projectDir
+      && (o.cwd || '') === (x.cwd || '') && o.logWrite >= x.clearTs - CLEAR_GAP_MS && o.logWrite <= x.clearTs + 2000);
+    if (cands.length === 1) pairs.push([cands[0].sid, x.sid, 'time']);
+  }
+  return pairs.filter(([a, b]) => bySid.has(b) && a !== b);
+}
+
+function inheritCleared(list) {
+  if (!ctx) return;
+  const pairs = clearPairs(list);
+  if (!pairs.length) return;
+  const done = new Set((ctx.globalState.get(CLEAR_DONE_KEY) || []).slice(-300));
+  const todo = pairs.filter(([a, b]) => !done.has(a + '>' + b));
+  if (!todo.length) return;
+  const bySid = new Map(list.map((x) => [x.sid, x]));
+  const moved = [];
+  updateGroups((d) => {
+    let hit = false;
+    for (const [oldSid, newSid] of todo) {
+      const g = d.groups.find((x) => x.members[oldSid]);
+      if (!g || d.groups.some((x) => x.members[newSid])) continue; // 옛 세션이 그룹에 없거나, 새 세션을 이미 어느 그룹에 넣었으면 그대로
+      const m = g.members[oldSid];
+      const old = bySid.get(oldSid);
+      const name = old && old.titleSource === 'custom' ? old.title : m.name || '';
+      g.members[newSid] = { role: m.role || '', at: Date.now(), ...(name ? { name } : {}) };
+      delete g.members[oldSid];
+      if (g.lead === oldSid) g.lead = newSid;
+      moved.push(oldSid);
+      hit = true;
+    }
+    return hit ? undefined : false;
+  });
+  for (const [a, b] of todo) done.add(a + '>' + b);
+  ctx.globalState.update(CLEAR_DONE_KEY, [...done].slice(-300));
+  if (moved.length) {
+    const store = normalizeArchive(loadArchive());
+    for (const sid of moved) { store.archived[sid] = Date.now(); delete store.restored[sid]; }
+    saveArchive(store);
+  }
+}
+
+// 이어받은 이름: 새 세션에 사용자가 이름을 붙이기 전까지 그룹에 남긴 옛 이름으로 보인다(보드 "세션과 역할" 표의 이름과 짝이 맞게)
+function applyInheritedNames(list) {
+  const names = new Map();
+  for (const g of loadGroups().groups) for (const [sid, m] of Object.entries(g.members)) if (m.name) names.set(sid, m.name);
+  if (!names.size) return;
+  for (const x of list) {
+    const n = names.get(x.sid);
+    if (n && x.titleSource !== 'custom') { x.title = n; x.titleSource = 'inherited'; }
+  }
 }
 
 // ---------- 보드가 정한 역할(유동 역할) ----------
@@ -3804,6 +3890,7 @@ function onWorkerMessage(m) {
     loaded = true;
     stillReading = true;
     raw = m.sessions || [];
+    applyInheritedNames(raw);
     statusSessions = raw.filter((s) => s.alive);
     rebuild();
     updateStatusBar();
@@ -3830,6 +3917,8 @@ function onWorkerMessage(m) {
     lastError = null;
     loaded = true;
     raw = m.sessions || [];
+    try { inheritCleared(raw); } catch (e) { console.error('[clear inherit]', e); } // 실패해도 목록은 그린다
+    applyInheritedNames(raw);
     statusSessions = raw.filter((s) => s.alive);
     rebuild();
     updateStatusBar();

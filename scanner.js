@@ -389,6 +389,8 @@ function newFileState(d) {
     customTitle: null,
     aiTitle: null,
     firstPrompt: null,
+    clearStart: false, // 이 기록이 /clear로 시작했다(같은 프로세스가 세션 ID만 바꿔 새로 시작한 기록)
+    clearTs: 0, // 그 /clear 기록의 시각
     cwd: null,
     changes: [],
     pendingBash: new Map(),
@@ -1118,6 +1120,11 @@ function handleLine(st, line, absOffset, headOnly) {
     let o;
     try { o = JSON.parse(line.toString('utf8')); } catch { return; }
     if (o.cwd && !st.cwd) st.cwd = o.cwd;
+    // 첫 말보다 먼저 /clear 명령 기록이 있으면 /clear로 시작한 기록(그룹 자리를 옛 세션에서 이어받을 때 쓴다)
+    if (!st.firstPrompt && !st.sub && !st.clearStart && allTextOfUser(o).includes('<command-name>/clear</command-name>')) {
+      st.clearStart = true;
+      st.clearTs = Date.parse(o.timestamp) || 0;
+    }
     if (!st.firstPrompt && !o.isMeta && !st.sub) {
       // 도구가 끼워 넣은 안내문을 걷어 낸 뒤의 첫 말(제목이 없을 때 제목 대신 쓴다)
       const t = cleanPrompt(allTextOfUser(o));
@@ -1401,7 +1408,7 @@ function readRegistry() {
     if (!alive) continue;
     // SDK로 돌린 짧은 실행(claude -p, 사용량 다시 받기 등)은 Claude Code 세션 목록처럼 세지 않는다
     if (typeof d.entrypoint === 'string' && d.entrypoint.startsWith('sdk-')) continue;
-    map.set(d.sessionId, { pid: d.pid, status: d.status || null, waitingFor: typeof d.waitingFor === 'string' ? d.waitingFor : null, statusSince: Number(d.statusUpdatedAt) || null, name: d.name || null, nameSource: d.nameSource || null, cwd: d.cwd || null, entrypoint: d.entrypoint || null });
+    map.set(d.sessionId, { pid: d.pid, procStart: d.procStart != null ? String(d.procStart) : null, status: d.status || null, waitingFor: typeof d.waitingFor === 'string' ? d.waitingFor : null, statusSince: Number(d.statusUpdatedAt) || null, name: d.name || null, nameSource: d.nameSource || null, cwd: d.cwd || null, entrypoint: d.entrypoint || null });
   }
   return map;
 }
@@ -2037,6 +2044,11 @@ function createModel() {
         projectDir: main.project || null, // ~/.claude/projects 아래 폴더 이름
         file: main.file, // 이 세션의 대화 기록 파일(이름을 바꿀 때 제목 기록을 덧붙인다)
         programmatic: !!main.programmatic,
+        // /clear 이어받기 판정용: 같은 프로세스 표시(pid:시작 시각), /clear로 시작한 기록인지·그 시각, 본 기록 파일이 마지막으로 바뀐 시각
+        procKey: reg && reg.pid ? `${reg.pid}:${reg.procStart || ''}` : null,
+        clearStart: !!main.clearStart,
+        clearTs: main.clearTs || 0,
+        logWrite: main.mtimeMs || 0,
         ...state,
         activity,
         liveFiles,
