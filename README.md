@@ -241,7 +241,7 @@ Right-click a file in the Explorer or an editor tab and choose **Session Watchto
 ## Archive, rename and older work
 
 - **Archived section.** Sessions that have been quiet for longer than Claude Code's *Archive Inactive Sessions* setting are collected in a collapsed **Archived** section. The clock button on it lets you pick your own time (1 to 30 days, or never). The archive button on a row moves a session there by hand. An archived session comes back by itself when it gets a new message, or with its restore button.
-- **Rename.** The pencil button renames a session. The new name also shows in Claude Code's own list, because it is stored the same way Claude Code stores it.
+- **Rename.** The pencil button renames a session. The new name also shows in Claude Code's own list, because it is stored the same way Claude Code stores it. A Codex session is renamed through Codex itself (Watchtower briefly starts `codex app-server` from the Codex VS Code extension or the `codex` CLI and asks it to rename the chat), so Codex keeps the name too; names given in Codex show in Watchtower. Where no Codex program can be started (for example only the Codex desktop app on Windows), rename the chat in Codex.
 - **Older work.** A session outside the time range can be loaded on demand, as described above.
 
 ## Codex

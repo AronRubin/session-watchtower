@@ -13,6 +13,7 @@ const mcp = require('./mcp');
 const usage = require('./usage');
 const phoneboard = require('./phoneboard');
 const boardhost = require('./boardhost');
+const codexname = require('./codexname');
 
 // 화면 글자: 영어 원문 + l10n/bundle.l10n.ko.json(한국어). 날짜·시간 형식만 언어별로 직접 만든다.
 const L = (message, ...args) => vscode.l10n.t(message, ...args);
@@ -514,12 +515,13 @@ function searchConversations(initial) {
 
 // ---------- 세션 이름 바꾸기 ----------
 // Claude Code가 이름을 바꿀 때와 똑같이, 대화 기록 끝에 제목 기록 한 줄({type:"custom-title"})을 덧붙인다.
-// 이 확장이 자기 저장소 밖에 쓰는 것은 이것 하나뿐이다. 프로젝트 파일은 건드리지 않는다.
+// Codex 대화는 Codex의 공식 이름 바꾸기 통로(app-server thread/name/set)에 맡긴다(codexname.js). Codex 파일은 직접 고치지 않는다.
+// 프로젝트 파일은 건드리지 않는다.
 async function renameSession(arg) {
   const sid = sidOf(arg);
   const s = raw.find((x) => x.sid === sid);
   if (!s) return false;
-  if (s.agent === 'codex' || sid.startsWith('codex:')) { vscode.window.showInformationMessage(L('Codex sessions cannot be renamed from here.')); return false; }
+  const isCodex = s.agent === 'codex' || sid.startsWith('codex:');
   const input = await vscode.window.showInputBox({
     prompt: L('New name for this session'),
     value: String(s.title || '').replace(/\s+/g, ' '),
@@ -528,6 +530,7 @@ async function renameSession(arg) {
   const title = String(input || '').replace(/\s+/g, ' ').trim();
   // 같은 이름이어도 /clear로 이어받아 잠시 보여 주던 이름이면 기록에 남긴다(그래야 Claude Code 목록에도 그 이름이 보인다)
   if (!title || title.length > 200 || (title === s.title && s.titleSource !== 'inherited')) return false;
+  if (isCodex) return renameCodexSession(s, sid, title);
   const file = s.file;
   try {
     if (!file || !UUID_RE.test(sid)) throw new Error('no session log');
@@ -545,6 +548,24 @@ async function renameSession(arg) {
     return false;
   }
   s.title = title; // 다음 읽기 전에도 바로 보이게
+  rebuild();
+  requestScan(true);
+  return true;
+}
+
+async function renameCodexSession(s, sid, title) {
+  const ext = vscode.extensions.getExtension('openai.chatgpt');
+  const bin = codexname.findCodexBin(ext ? [ext.extensionPath] : []);
+  const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: L('Renaming the Codex session…') },
+    () => codexname.setCodexThreadName({ bin, threadId: sid.slice(6), name: title }));
+  if (!r.ok) {
+    vscode.window.showWarningMessage(r.reason === 'missing'
+      ? L('Could not rename the Codex session: the Codex program was not found. Install the Codex extension or the codex CLI, or rename it in Codex.')
+      : L('Could not rename the session: {0}', r.message));
+    return false;
+  }
+  s.title = title; // 다음 읽기 전에도 바로 보이게
+  s.titleSource = 'custom';
   rebuild();
   requestScan(true);
   return true;
@@ -3054,7 +3075,7 @@ function sessionsHtml(webview) {
     const btn = (act, label, svg) => '<button class="act" data-act="' + act + '" data-sid="' + esc(r.sid) + '" title="' + esc(label) + '" aria-label="' + esc(label) + '">' + svg + '</button>';
     // 보는 기간 안에 바꾼 파일이 없는 세션은 "불러오기" 단추(그 세션의 마지막 작업분을 읽어 온다)
     const acts = (r.team ? btn('role', strings.setRole, tagIcon) + btn('ungroup', strings.removeFromGroup, groupOutIcon) : btn('group', strings.addToGroup, groupAddIcon))
-      + (r.codex ? '' : btn('rename', strings.rename, pencilIcon))
+      + btn('rename', strings.rename, pencilIcon)
       + (inArchive ? '' : r.files ? btn('review', strings.review, reviewIcon) + btn('reveal', strings.showChanges, icon) : btn('reveal', strings.loadChanges, icon))
       + (inArchive ? btn('unarchive', strings.unarchive, restoreIcon) : btn('archive', strings.archive, archiveIcon));
     const ds = diffstat(r.add || 0, r.del || 0);

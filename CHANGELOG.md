@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.38.0
+
+- **Codex sessions can be renamed, and show their Codex names.** The pencil button used to say Codex sessions cannot be renamed, and the list showed a Codex chat's first question even after you named it in Codex. Watchtower now reads the names Codex keeps in `~/.codex/session_index.jsonl`, and renames a Codex chat the way Codex does: it briefly starts `codex app-server` (from the Codex VS Code extension, or the `codex` CLI on PATH), sends `thread/name/set`, and stops it. Codex writes the name itself; Watchtower does not edit Codex's files. Where no Codex program can be started, Watchtower says so.
+
 ## 0.37.0
 
 - **`/clear` keeps the session in its group.** `/clear` starts a new conversation with a new session ID, so it used to drop out of its group and lose its role tag. Now the new conversation takes over the old one's place, role and lead badge, and shows the name you gave the old one (so the board's *Sessions and roles* table still matches) until you rename it. It is recognised when the same Claude Code process switches to a conversation whose log starts with `/clear`, or, when no window saw that moment, when a `/clear` conversation in the same folder starts within 10 seconds of the old one ending and only one old conversation fits. The old conversation goes to Archived. `/resume` into another conversation and a later, unrelated `/clear` are not taken over, and once you remove the new conversation from the group it is not put back.

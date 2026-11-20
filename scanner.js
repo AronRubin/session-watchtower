@@ -679,6 +679,32 @@ function textOfUser(o) {
 
 // ---------- Codex 기록(~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl) ----------
 
+// Codex가 붙인 대화 이름: ~/.codex/session_index.jsonl에 {id, thread_name, updated_at}을 한 줄씩 덧붙인다(같은 id는 마지막 줄이 이긴다).
+// Codex 앱·VS Code 확장에서 이름을 바꾸면 여기와 Codex 자체 DB에 함께 적힌다. 이 확장은 이 파일만 읽는다(DB는 열지 않는다)
+const CODEX_INDEX = path.join(HOME, '.codex', 'session_index.jsonl');
+let cxNames = { key: '', map: new Map() };
+function parseCodexIndex(text) {
+  const map = new Map();
+  for (const line of String(text).split('\n')) {
+    if (!line) continue;
+    let o;
+    try { o = JSON.parse(line); } catch { continue; } // 쓰는 도중인 마지막 줄 등
+    const id = o && typeof o.id === 'string' ? o.id.toLowerCase() : '';
+    const name = o && typeof o.thread_name === 'string' ? o.thread_name.replace(/\s+/g, ' ').trim() : '';
+    if (id && name) map.set(id, name);
+  }
+  return map;
+}
+function codexNames(file = CODEX_INDEX) {
+  let st;
+  try { st = fs.statSync(file); } catch { return new Map(); }
+  const key = `${file}|${st.size}|${st.mtimeMs}`;
+  if (cxNames.key !== key) {
+    try { cxNames = { key, map: parseCodexIndex(fs.readFileSync(file, 'utf8')) }; } catch { return cxNames.map; }
+  }
+  return cxNames.map;
+}
+
 const CX_META = B('"session_meta"');
 const CX_TURN = B('"turn_context"');
 const CX_PATCH = B('apply_patch');
@@ -1723,12 +1749,14 @@ function createPromptIndex() {
     const terms = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
     const out = [];
     if (terms.length) {
+      const cxn = codexNames();
       for (const e of idx.values()) {
+        const cxTitle = e.codex ? cxn.get(String(e.sid).slice(6).toLowerCase()) : null;
         for (const p of e.prompts) {
           const low = p.text.toLowerCase();
           if (!terms.every((t) => low.includes(t))) continue;
           const at = Math.max(0, low.indexOf(terms[0]) - 40);
-          out.push({ sid: e.sid, file: e.file, cwd: e.cwd, project: e.cwd ? path.basename(e.cwd) : null, title: e.title || (e.prompts[0] ? e.prompts[0].text.slice(0, 60) : e.sid.slice(0, 8)), ts: p.ts, snippet: (at > 0 ? '…' : '') + p.text.slice(at, at + 160) });
+          out.push({ sid: e.sid, file: e.file, cwd: e.cwd, project: e.cwd ? path.basename(e.cwd) : null, title: e.title || cxTitle || (e.prompts[0] ? e.prompts[0].text.slice(0, 60) : e.sid.slice(0, 8)), ts: p.ts, snippet: (at > 0 ? '…' : '') + p.text.slice(at, at + 160) });
         }
       }
     }
@@ -2007,6 +2035,7 @@ function createModel() {
       if (!lastActivity) lastActivity = lastWrite;
       let title = main.customTitle || main.aiTitle || null;
       let titleSource = main.customTitle ? 'custom' : main.aiTitle ? 'ai' : null;
+      if (codex && !title) { const n = codexNames().get(sid.slice(6).toLowerCase()); if (n) { title = n; titleSource = 'custom'; } }
       if (!title && reg && reg.name && reg.nameSource !== 'derived') { title = reg.name; titleSource = 'registry'; }
       if (!title && main.firstPrompt) { title = main.firstPrompt; titleSource = 'prompt'; }
       if (!title) { title = codex ? 'Codex ' + sid.slice(6, 14) : sid.slice(0, 8); titleSource = 'id'; }
@@ -2073,4 +2102,4 @@ function scanOne(file, agent, sinceMs, seekMinBytes) {
   return st;
 }
 
-module.exports = { LIVE_MS, pathDirsIn, codexPatchText, looksReadOnly, createPromptIndex, createModel, shellTargets, stripHeredocBodies, hunkCounts, isScratch, readRegistry, parsePatch, attentionMarker, scanOne };
+module.exports = { LIVE_MS, parseCodexIndex, codexNames, pathDirsIn, codexPatchText, looksReadOnly, createPromptIndex, createModel, shellTargets, stripHeredocBodies, hunkCounts, isScratch, readRegistry, parsePatch, attentionMarker, scanOne };

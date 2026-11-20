@@ -582,6 +582,55 @@ test('Codex 세션을 누르면 그 세션 폴더에서 터미널로 이어 연�
   assert.ok(!stub.calls.some((c) => c[0] === 'terminal'));
 });
 
+test('Codex 세션 이름: Codex가 붙인 이름을 보여 주고, 여기서 바꾸면 Codex 공식 통로(thread/name/set)로 바꾼다', async () => {
+  const CX = 'c0de0000-8888-4888-8888-00000000beef';
+  fx.codexSession(home, CX, [
+    { timestamp: fx.iso(Date.now() - MIN), type: 'session_meta', payload: { id: CX, session_id: CX, cwd: project, originator: 'codex_vscode', source: 'vscode' } },
+    { timestamp: fx.iso(Date.now() - MIN), type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'first question of the codex chat' }] } },
+  ], Date.now());
+  const index = path.join(home, '.codex', 'session_index.jsonl');
+  const titleOf = () => { const r = (web.lastPayload().mine || []).concat(...(web.lastPayload().groups || []).map((g) => g.rows)).find((x) => x.sid === 'codex:' + CX); return r && r.title; };
+  await stub.commands.get('claudeSessionChanges.refresh')();
+  await waitFor(() => titleOf() === 'first question of the codex chat', '이름이 없으면 첫 질문');
+  // Codex(앱·VS Code 확장)에서 붙인 이름
+  fs.appendFileSync(index, JSON.stringify({ id: CX, thread_name: 'Named in Codex', updated_at: new Date().toISOString() }) + '\n');
+  await stub.commands.get('claudeSessionChanges.refresh')();
+  await waitFor(() => titleOf() === 'Named in Codex', 'Codex가 붙인 이름');
+  // 여기서 바꾸기: PATH의 가짜 codex가 받는다(진짜 Codex처럼 session_index.jsonl에 적는다)
+  const bin = fs.mkdtempSync(path.join(require('os').tmpdir(), 'swt-bin-'));
+  fs.symlinkSync(path.join(__dirname, 'helpers', 'fake-codex.js'), path.join(bin, 'codex'));
+  const oldPath = process.env.PATH;
+  process.env.PATH = bin + path.delimiter + oldPath;
+  process.env.CODEX_HOME = path.join(home, '.codex');
+  try {
+    stub.state.input = (o) => { assert.strictEqual(o.value, 'Named in Codex', '지금 이름이 미리 들어 있다'); return '  Renamed  here '; };
+    assert.strictEqual(await stub.commands.get('claudeSessionChanges.renameSession')('codex:' + CX), true);
+    const last = JSON.parse(fs.readFileSync(index, 'utf8').trimEnd().split('\n').pop());
+    assert.deepStrictEqual([last.id, last.thread_name], [CX, 'Renamed here']);
+    await waitFor(() => titleOf() === 'Renamed here', '바뀐 이름');
+    await stub.commands.get('claudeSessionChanges.refresh')();
+    await waitFor(() => titleOf() === 'Renamed here', '다시 읽은 뒤에도 그 이름');
+    // Codex가 거절하면 이름을 바꾸지 않고 알린다
+    process.env.FAKE_CODEX_MODE = 'error';
+    stub.state.input = 'Should not stick';
+    stub.calls.length = 0;
+    assert.strictEqual(await stub.commands.get('claudeSessionChanges.renameSession')('codex:' + CX), false);
+    assert.ok(stub.calls.some((c) => c[0] === 'warn' && /thread not found/.test(c[1])));
+    assert.strictEqual(titleOf(), 'Renamed here');
+    // Codex 프로그램이 없으면 그렇게 알린다
+    delete process.env.FAKE_CODEX_MODE;
+    process.env.PATH = path.join(bin, 'empty');
+    stub.calls.length = 0;
+    assert.strictEqual(await stub.commands.get('claudeSessionChanges.renameSession')('codex:' + CX), false);
+    assert.ok(stub.calls.some((c) => c[0] === 'warn' && /Codex program was not found/.test(c[1])));
+  } finally {
+    process.env.PATH = oldPath;
+    delete process.env.CODEX_HOME;
+    delete process.env.FAKE_CODEX_MODE;
+    stub.state.input = undefined;
+  }
+});
+
 test('그림 파일을 누르면 글자 비교 대신 그 파일을 그대로 연다(0.12.0까지는 "cannot open" 오류)', async () => {
   const png = path.join(project, 'shot.png');
   fs.writeFileSync(png, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]));
