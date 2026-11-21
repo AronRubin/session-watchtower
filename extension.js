@@ -2621,6 +2621,7 @@ class Provider {
     }
     if (el.t === 'file') {
       const { s, f } = el;
+      const reviewed = isReviewed(s, f);
       const it = new vscode.TreeItem(path.basename(f.path), N.Collapsed);
       it.id = `f:${s.sid}|${f.path}`;
       it.resourceUri = vscode.Uri.from({ scheme: ITEM_SCHEME, path: f.path, query: f.badge });
@@ -2630,7 +2631,7 @@ class Provider {
         : live === 'approval' ? new vscode.ThemeIcon('bell-dot', new vscode.ThemeColor('charts.blue'))
         : vscode.ThemeIcon.File;
       const alsoBy = f.overlap ? f.overlap.map((o) => String(o.title).replace(/\s+/g, ' ').slice(0, 24)).join(', ') : '';
-      it.description = [alsoBy ? '⚠ ' + L('{0} too', alsoBy) : '', counts(f.add, f.del), fmtTime(f.lastTs), displayDir(f.path, s)].filter(Boolean).join('  ');
+      it.description = [reviewed ? '✓' : '', alsoBy ? '⚠ ' + L('{0} too', alsoBy) : '', counts(f.add, f.del), fmtTime(f.lastTs), displayDir(f.path, s)].filter(Boolean).join('  ');
       const kinds = [...f.kinds].map((k) => kindText(k)).join(', ');
       it.tooltip = [
         f.path,
@@ -2639,10 +2640,11 @@ class Provider {
         alsoBy ? L('Another session also changed this file ({0}). Check that the two changes do not clash.', alsoBy) : null,
         L('Changed {0} time(s) in this session ({1})', f.changes.length, kinds),
         f.kinds.has('shell') ? L('Includes changes guessed from shell commands.') : null,
+        reviewed ? L('✓ Marked reviewed. A newer change to this file in this session clears the mark.') : null,
         L("Click: compare before this session's first change ↔ current file on disk"),
       ].filter(Boolean).join('\n');
       it.command = { command: 'claudeSessionChanges.openFileDiff', title: L('Compare'), arguments: [el] };
-      it.contextValue = 'file';
+      it.contextValue = reviewed ? 'fileReviewed' : 'file';
       return it;
     }
     if (el.t === 'change') {
@@ -4086,6 +4088,27 @@ function updateStatusBar() {
 // Claude는 Claude Code가 ~/.claude.json에 받아 둔 값, Codex는 가장 최근 Codex 기록의 마지막 한도 값(usage.js).
 // 인터넷에 묻지 않고, 매 주기에 파일 크기·시각만 보고 바뀌었을 때만 읽는다. 글자가 같으면 상태 표시줄을 다시 그리지 않는다.
 const USAGE_CODEX_KEY = 'claudeSessionChanges.usageCodexLast';
+
+// ---------- Mark reviewed ----------
+// A changed file can be marked reviewed. The mark remembers the file's last change time in that session,
+// so a newer change clears it by itself. Kept in globalState (sessions show in every window), newest 500 only.
+const REVIEWED_KEY = 'claudeSessionChanges.reviewed';
+const reviewedKey = (s, f) => `${s.sid}|${pathKey(f.path)}`;
+
+function isReviewed(s, f) {
+  const marks = (ctx && ctx.globalState.get(REVIEWED_KEY, {})) || {};
+  return !!s && !!f && marks[reviewedKey(s, f)] === f.lastTs;
+}
+
+function setReviewed(el, on) {
+  if (!ctx || !el || el.t !== 'file' || !el.s || !el.f) return;
+  const marks = { ...(ctx.globalState.get(REVIEWED_KEY, {}) || {}) };
+  const k = reviewedKey(el.s, el.f);
+  delete marks[k];
+  if (on) marks[k] = el.f.lastTs;
+  ctx.globalState.update(REVIEWED_KEY, Object.fromEntries(Object.entries(marks).slice(-500)));
+  provider.fire();
+}
 let usageItem = null;
 let usageCodexLast = null; // 마지막으로 읽은 Codex 한도(창을 다시 불러와도 남게 globalState에도 둔다)
 let usageShown = '';
@@ -5003,6 +5026,8 @@ function activate(context) {
       return vscode.window.showInformationMessage(L('The file is not on disk anymore.'));
     }),
     vscode.commands.registerCommand('claudeSessionChanges.copyPath', (el) => el && el.f && vscode.env.clipboard.writeText(el.f.path)),
+    vscode.commands.registerCommand('claudeSessionChanges.markReviewed', (el) => setReviewed(el, true)),
+    vscode.commands.registerCommand('claudeSessionChanges.markNotReviewed', (el) => setReviewed(el, false)),
     vscode.commands.registerCommand('claudeSessionChanges.copySessionId', (el) => el && el.s && vscode.env.clipboard.writeText(el.s.sid)),
     vscode.commands.registerCommand('claudeSessionChanges.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${context.extension.id}`)),
     treeView.onDidChangeVisibility((e) => { if (e.visible) requestScan(false); }),

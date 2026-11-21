@@ -10,6 +10,8 @@
   "command.openFileDiff": "세션 첫 변경 전과 비교",
   "command.openChangeDiff": "이 변경 보기",
   "command.openFile": "파일 열기",
+  "command.markReviewed": "검토함으로 표시",
+  "command.markNotReviewed": "검토 표시 지우기",
   "command.copyPath": "경로 복사",
   "command.copySessionId": "세션 ID 복사",
   "command.revealSession": "변경 파일 보기",

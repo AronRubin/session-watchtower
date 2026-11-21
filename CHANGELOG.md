@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Mark reviewed.** Hover a changed file and press ✓ (or right-click → *Mark reviewed*) to keep track of what you have already looked at. The file shows a ✓ until the session changes it again, which clears the mark by itself; *Mark not reviewed* takes it off. Marks are kept per session and file.
+
 ## 0.38.0
 
 - **Codex sessions can be renamed, and show their Codex names.** The pencil button used to say Codex sessions cannot be renamed, and the list showed a Codex chat's first question even after you named it in Codex. Watchtower now reads the names Codex keeps in `~/.codex/session_index.jsonl`, and renames a Codex chat the way Codex does: it briefly starts `codex app-server` (from the Codex VS Code extension, or the `codex` CLI on PATH), sends `thread/name/set`, and stops it. Codex writes the name itself; Watchtower does not edit Codex's files. Where no Codex program can be started, Watchtower says so.

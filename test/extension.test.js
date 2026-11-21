@@ -342,6 +342,27 @@ test('변경 전부 보기: 세션이 바꾼 파일을 한 창에', async () => 
   assert.strictEqual(await content(edited[2]), 'b\nrest\n');
 });
 
+test('Mark reviewed: a check mark on the file, cleared by a newer change or by Mark not reviewed', async () => {
+  const item = () => provider().getTreeItem(fileOf('app.js'));
+  assert.strictEqual(item().contextValue, 'file');
+  await stub.commands.get('claudeSessionChanges.markReviewed')(fileOf('app.js'));
+  assert.strictEqual(item().contextValue, 'fileReviewed');
+  assert.match(item().description, /^✓/);
+  assert.match(item().tooltip, /Marked reviewed/);
+  assert.strictEqual(provider().getTreeItem(fileOf('new.js')).contextValue, 'file', 'other files are not marked');
+  const f = fileOf('app.js').f;
+  const was = f.lastTs;
+  f.lastTs = was + 1000; // the session changed the file again
+  try {
+    assert.strictEqual(item().contextValue, 'file', 'a newer change clears the mark');
+  } finally { f.lastTs = was; }
+  assert.strictEqual(item().contextValue, 'fileReviewed');
+  await stub.commands.get('claudeSessionChanges.markNotReviewed')(fileOf('app.js'));
+  assert.strictEqual(item().contextValue, 'file');
+  assert.ok(!/✓/.test(item().description));
+  await stub.commands.get('claudeSessionChanges.markReviewed')(undefined); // from the palette: nothing to mark
+});
+
 test('상태 표시줄: 작업 중 → 승인 기다림이면 경고색', async () => {
   const bar = stub.statusItems[0];
   assert.match(bar.text, /\$\(loading~spin\) 1/);

@@ -10,6 +10,8 @@
   "command.openFileDiff": "Compare with before this session",
   "command.openChangeDiff": "Show this change",
   "command.openFile": "Open file",
+  "command.markReviewed": "Mark reviewed",
+  "command.markNotReviewed": "Mark not reviewed",
   "command.copyPath": "Copy path",
   "command.copySessionId": "Copy session ID",
   "command.revealSession": "Show changed files",
