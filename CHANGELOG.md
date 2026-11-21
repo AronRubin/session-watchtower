@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Mark reviewed.** Hover a changed file and press ✓ (or right-click → *Mark reviewed*) to keep track of what you have already looked at. The file shows a ✓ until the session changes it again, which clears the mark by itself; *Mark not reviewed* takes it off. Marks are kept per session and file.
+- **Mark reviewed.** Each changed file has a checkbox: tick it once you have looked at the file. A newer change to that file in the session clears the tick by itself. Ticks are kept per session and file (newest 500).
 
 ## 0.38.0
 

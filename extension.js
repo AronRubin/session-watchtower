@@ -2631,7 +2631,7 @@ class Provider {
         : live === 'approval' ? new vscode.ThemeIcon('bell-dot', new vscode.ThemeColor('charts.blue'))
         : vscode.ThemeIcon.File;
       const alsoBy = f.overlap ? f.overlap.map((o) => String(o.title).replace(/\s+/g, ' ').slice(0, 24)).join(', ') : '';
-      it.description = [reviewed ? '✓' : '', alsoBy ? '⚠ ' + L('{0} too', alsoBy) : '', counts(f.add, f.del), fmtTime(f.lastTs), displayDir(f.path, s)].filter(Boolean).join('  ');
+      it.description = [alsoBy ? '⚠ ' + L('{0} too', alsoBy) : '', counts(f.add, f.del), fmtTime(f.lastTs), displayDir(f.path, s)].filter(Boolean).join('  ');
       const kinds = [...f.kinds].map((k) => kindText(k)).join(', ');
       it.tooltip = [
         f.path,
@@ -2640,11 +2640,14 @@ class Provider {
         alsoBy ? L('Another session also changed this file ({0}). Check that the two changes do not clash.', alsoBy) : null,
         L('Changed {0} time(s) in this session ({1})', f.changes.length, kinds),
         f.kinds.has('shell') ? L('Includes changes guessed from shell commands.') : null,
-        reviewed ? L('✓ Marked reviewed. A newer change to this file in this session clears the mark.') : null,
         L("Click: compare before this session's first change ↔ current file on disk"),
       ].filter(Boolean).join('\n');
       it.command = { command: 'claudeSessionChanges.openFileDiff', title: L('Compare'), arguments: [el] };
-      it.contextValue = reviewed ? 'fileReviewed' : 'file';
+      it.contextValue = 'file';
+      it.checkboxState = {
+        state: reviewed ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked,
+        tooltip: reviewed ? L('Reviewed. A newer change to this file in this session clears the tick.') : L('Tick when reviewed'),
+      };
       return it;
     }
     if (el.t === 'change') {
@@ -4090,7 +4093,7 @@ function updateStatusBar() {
 const USAGE_CODEX_KEY = 'claudeSessionChanges.usageCodexLast';
 
 // ---------- Mark reviewed ----------
-// A changed file can be marked reviewed. The mark remembers the file's last change time in that session,
+// A changed file has a checkbox for "reviewed". The mark remembers the file's last change time in that session,
 // so a newer change clears it by itself. Kept in globalState (sessions show in every window), newest 500 only.
 const REVIEWED_KEY = 'claudeSessionChanges.reviewed';
 const reviewedKey = (s, f) => `${s.sid}|${pathKey(f.path)}`;
@@ -4100,12 +4103,16 @@ function isReviewed(s, f) {
   return !!s && !!f && marks[reviewedKey(s, f)] === f.lastTs;
 }
 
-function setReviewed(el, on) {
-  if (!ctx || !el || el.t !== 'file' || !el.s || !el.f) return;
+// items: [[tree element, TreeItemCheckboxState], ...] as onDidChangeCheckboxState gives them
+function setReviewed(items) {
+  if (!ctx) return;
   const marks = { ...(ctx.globalState.get(REVIEWED_KEY, {}) || {}) };
-  const k = reviewedKey(el.s, el.f);
-  delete marks[k];
-  if (on) marks[k] = el.f.lastTs;
+  for (const [el, state] of items || []) {
+    if (!el || el.t !== 'file' || !el.s || !el.f) continue;
+    const k = reviewedKey(el.s, el.f);
+    delete marks[k];
+    if (state === vscode.TreeItemCheckboxState.Checked) marks[k] = el.f.lastTs;
+  }
   ctx.globalState.update(REVIEWED_KEY, Object.fromEntries(Object.entries(marks).slice(-500)));
   provider.fire();
 }
@@ -4969,7 +4976,7 @@ function activate(context) {
   aliveOnly = !!context.globalState.get(CTX_ALIVE, false);
   vscode.commands.executeCommand('setContext', CTX_ALIVE, aliveOnly);
 
-  treeView = vscode.window.createTreeView(VIEW, { treeDataProvider: provider, showCollapseAll: true });
+  treeView = vscode.window.createTreeView(VIEW, { treeDataProvider: provider, showCollapseAll: true, manageCheckboxStateManually: true });
   // 세션 숫자와 사용량은 오른쪽에 나란히(사용자 요청). 다른 확장 항목이 사이에 끼지 않게 흔치 않은, 바로 붙은 우선순위를 쓴다
   const STATUS_PRIORITY = 9876.5432;
   statusItem = vscode.window.createStatusBarItem('claudeSessionChanges.status', vscode.StatusBarAlignment.Right, STATUS_PRIORITY + 0.0001);
@@ -5026,11 +5033,10 @@ function activate(context) {
       return vscode.window.showInformationMessage(L('The file is not on disk anymore.'));
     }),
     vscode.commands.registerCommand('claudeSessionChanges.copyPath', (el) => el && el.f && vscode.env.clipboard.writeText(el.f.path)),
-    vscode.commands.registerCommand('claudeSessionChanges.markReviewed', (el) => setReviewed(el, true)),
-    vscode.commands.registerCommand('claudeSessionChanges.markNotReviewed', (el) => setReviewed(el, false)),
     vscode.commands.registerCommand('claudeSessionChanges.copySessionId', (el) => el && el.s && vscode.env.clipboard.writeText(el.s.sid)),
     vscode.commands.registerCommand('claudeSessionChanges.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${context.extension.id}`)),
     treeView.onDidChangeVisibility((e) => { if (e.visible) requestScan(false); }),
+    treeView.onDidChangeCheckboxState((e) => setReviewed(e.items)),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('claudeCode.archiveInactiveSessions')) requestScan(true); // 다른 폴더 세션을 읽는 기간도 함께 바뀐다
       if (e.affectsConfiguration('workbench.reduceMotion')) updateExplorerMarks();

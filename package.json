@@ -118,16 +118,6 @@
         "title": "%command.copyPath%"
       },
       {
-        "command": "claudeSessionChanges.markReviewed",
-        "title": "%command.markReviewed%",
-        "icon": "$(check)"
-      },
-      {
-        "command": "claudeSessionChanges.markNotReviewed",
-        "title": "%command.markNotReviewed%",
-        "icon": "$(circle-slash)"
-      },
-      {
         "command": "claudeSessionChanges.copySessionId",
         "title": "%command.copySessionId%"
       },
@@ -278,14 +268,6 @@
           "when": "false"
         },
         {
-          "command": "claudeSessionChanges.markReviewed",
-          "when": "false"
-        },
-        {
-          "command": "claudeSessionChanges.markNotReviewed",
-          "when": "false"
-        },
-        {
           "command": "claudeSessionChanges.copySessionId",
           "when": "false"
         },
@@ -406,43 +388,23 @@
       "view/item/context": [
         {
           "command": "claudeSessionChanges.openFile",
-          "when": "view == claudeSessionChanges.tree && viewItem =~ /^file/",
+          "when": "view == claudeSessionChanges.tree && viewItem == file",
           "group": "inline"
         },
         {
           "command": "claudeSessionChanges.openFile",
-          "when": "view == claudeSessionChanges.tree && viewItem =~ /^file/",
+          "when": "view == claudeSessionChanges.tree && viewItem == file",
           "group": "1_open@1"
         },
         {
           "command": "claudeSessionChanges.openFileDiff",
-          "when": "view == claudeSessionChanges.tree && viewItem =~ /^file/",
+          "when": "view == claudeSessionChanges.tree && viewItem == file",
           "group": "1_open@2"
         },
         {
           "command": "claudeSessionChanges.copyPath",
-          "when": "view == claudeSessionChanges.tree && viewItem =~ /^file/",
+          "when": "view == claudeSessionChanges.tree && viewItem == file",
           "group": "2_copy@1"
-        },
-        {
-          "command": "claudeSessionChanges.markReviewed",
-          "when": "view == claudeSessionChanges.tree && viewItem == file",
-          "group": "inline"
-        },
-        {
-          "command": "claudeSessionChanges.markNotReviewed",
-          "when": "view == claudeSessionChanges.tree && viewItem == fileReviewed",
-          "group": "inline"
-        },
-        {
-          "command": "claudeSessionChanges.markReviewed",
-          "when": "view == claudeSessionChanges.tree && viewItem == file",
-          "group": "3_review@1"
-        },
-        {
-          "command": "claudeSessionChanges.markNotReviewed",
-          "when": "view == claudeSessionChanges.tree && viewItem == fileReviewed",
-          "group": "3_review@1"
         },
         {
           "command": "claudeSessionChanges.copySessionId",
